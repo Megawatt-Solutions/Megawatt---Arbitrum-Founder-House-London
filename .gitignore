@@ -1,0 +1,35 @@
+# ─── Dependencies ───────────────────────────────────────────
+node_modules/
+**/node_modules/
+
+# ─── Next.js / frontend build ───────────────────────────────
+.next/
+**/.next/
+out/
+**/out/
+.vercel
+*.tsbuildinfo
+**/*.tsbuildinfo
+
+# ─── Secrets / env (NEVER commit) ───────────────────────────
+.env
+.env.local
+.env.*.local
+**/.env
+**/.env.local
+!**/.env.example
+
+# ─── Foundry / contracts (added later) ──────────────────────
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+contracts/lib/
+
+# ─── Misc ───────────────────────────────────────────────────
+.DS_Store
+*.log
+npm-debug.log*
+yarn-error.log*
+.idea/
+.vscode/*
+!.vscode/extensions.json

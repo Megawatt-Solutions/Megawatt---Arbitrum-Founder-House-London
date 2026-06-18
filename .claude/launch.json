@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-lc",
+        "export PATH=\"$HOME/.nvm/versions/node/v22.22.0/bin:$PATH\"; cd web && exec env PORT=3210 npm run dev"
+      ],
+      "port": 3210
+    }
+  ]
+}

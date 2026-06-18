@@ -1,0 +1,92 @@
+import { StatTile } from "@/components/StatTile";
+import { VaultCard } from "@/components/VaultCard";
+import { VAULTS, dashboardMetrics, vaultsByStatus } from "@/lib/vaults";
+import { fmtCompact, fmtNum } from "@/lib/format";
+import { CoinsIcon, ShieldIcon, LayersIcon, BoltIcon } from "@/components/Icons";
+
+export default function DashboardPage() {
+  const m = dashboardMetrics();
+  const active = vaultsByStatus("active", "operational");
+  const fundraising = vaultsByStatus("fundraising");
+  const pipeline = vaultsByStatus("coming_soon");
+
+  const countries = new Set(VAULTS.map((v) => v.country)).size;
+  const totalMwh = VAULTS.reduce((s, v) => s + v.spec.energyKwh, 0) / 1000;
+
+  return (
+    <main className="page">
+      <div className="page-head">
+        <div className="page-title">Dashboard</div>
+        <div className="page-sub">
+          Invest in real battery energy storage systems, earn yield, and trade your position.
+        </div>
+      </div>
+
+      <div className="tile-grid">
+        <StatTile
+          label="Total Value Locked"
+          value={fmtCompact(m.tvl, "USD")}
+          sub={`${m.activeCount} active · ${m.fundraisingCount} fundraising`}
+          icon={<CoinsIcon size={18} />}
+        />
+        <StatTile
+          label="Replacement Fund"
+          value={fmtCompact(m.replacementFund, "USD")}
+          sub="Battery & gear refresh reserve"
+          icon={<ShieldIcon size={18} />}
+        />
+        <StatTile
+          label="Vaults"
+          value={fmtNum(m.vaultCount)}
+          sub={`Across ${countries} countries`}
+          icon={<LayersIcon size={18} />}
+        />
+        <StatTile
+          label="Total Capacity"
+          value={`${m.totalMw.toFixed(1)} MW`}
+          sub={`${totalMwh.toFixed(1)} MWh storage`}
+          icon={<BoltIcon size={18} />}
+        />
+      </div>
+
+      <div className="section-head">
+        <div className="section-title">
+          Active vaults <span className="section-count">{active.length}</span>
+        </div>
+        <span className="muted" style={{ fontSize: 12.5 }}>Earning & operational</span>
+      </div>
+      <div className="vault-grid">
+        {active.map((v) => (
+          <VaultCard key={v.id} vault={v} />
+        ))}
+      </div>
+
+      <div className="section-head">
+        <div className="section-title">
+          Fundraising <span className="section-count">{fundraising.length}</span>
+        </div>
+        <span className="muted" style={{ fontSize: 12.5 }}>Open for deposits</span>
+      </div>
+      <div className="vault-grid">
+        {fundraising.map((v) => (
+          <VaultCard key={v.id} vault={v} />
+        ))}
+      </div>
+
+      {pipeline.length > 0 && (
+        <>
+          <div className="section-head">
+            <div className="section-title">
+              Pipeline <span className="section-count">{pipeline.length}</span>
+            </div>
+          </div>
+          <div className="vault-grid">
+            {pipeline.map((v) => (
+              <VaultCard key={v.id} vault={v} />
+            ))}
+          </div>
+        </>
+      )}
+    </main>
+  );
+}
