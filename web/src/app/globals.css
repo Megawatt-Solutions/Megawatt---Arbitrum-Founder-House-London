@@ -820,3 +820,95 @@ button {
 @media (max-width: 560px) {
   .detail-tiles { grid-template-columns: 1fr; }
 }
+
+/* ─── Operational site monitor ────────────────────────────────── */
+.seg {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 3px;
+}
+.seg-btn {
+  padding: 6px 14px;
+  border-radius: 7px;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.seg-btn:hover { color: var(--text); }
+.seg-btn.active { background: var(--accent-dim); color: var(--accent); }
+
+@keyframes flowMove {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -104; }
+}
+.eflow .flow-anim {
+  stroke-dasharray: 3 10;
+  animation: flowMove 1.9s linear infinite;
+}
+.eflow .flow-anim.out { animation-direction: reverse; }
+
+.site-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.site-card { padding: 18px 20px; }
+.site-card-title {
+  text-align: center;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 14.5px;
+  letter-spacing: -0.01em;
+  margin-bottom: 14px;
+}
+.site-prod {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  text-align: center;
+}
+.site-prod-v {
+  font-size: 18px;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+}
+.site-prod .caps { margin-top: 3px; }
+.site-grid {
+  display: grid;
+  grid-template-columns: 1fr 344px;
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 1000px) {
+  .site-summary { grid-template-columns: 1fr; }
+  .site-grid { grid-template-columns: 1fr; }
+}
+
+/* Expandable performance panel */
+.perf-section { margin-top: 18px; }
+.perf-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px 22px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 14.5px;
+  font-weight: 620;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.perf-toggle:hover { background: var(--card-2); border-color: var(--border-2); }
+.perf-chevron { color: var(--muted); transition: transform 0.25s; display: inline-flex; }
+.perf-panel { margin-top: 14px; animation: fade 0.25s ease; }

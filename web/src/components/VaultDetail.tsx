@@ -11,9 +11,10 @@ import { simulate, nextDistributionSec } from "@/lib/bess";
 import { POSITIONS } from "@/lib/portfolio";
 import { useWallet, useToast } from "@/lib/wallet";
 import { Donut } from "./Donut";
+import { SiteMonitor } from "./SiteMonitor";
 import {
   ArrowLeftIcon, ClockIcon, BoltIcon, SunIcon, CubeIcon, VerifiedIcon,
-  ExternalLinkIcon, ShieldIcon, CheckIcon, XIcon,
+  ExternalLinkIcon, ShieldIcon, CheckIcon, XIcon, ChevronDownIcon,
 } from "./Icons";
 
 const EXPLORER = "https://explorer.testnet.xrplevm.org";
@@ -30,6 +31,7 @@ export function VaultDetail({ vault }: { vault: Vault }) {
   const { notify } = useToast();
   const [t, setT] = useState(0);
   const [showDeposit, setShowDeposit] = useState(false);
+  const [showPerf, setShowPerf] = useState(false);
 
   const isShowcase = vault.kind === "showcase";
   const isActive = vault.status === "active";
@@ -181,6 +183,24 @@ export function VaultDetail({ vault }: { vault: Vault }) {
           </div>
         </div>
       </div>
+
+      {hasTelemetry && (
+        <div className="perf-section">
+          <button className="perf-toggle" onClick={() => setShowPerf((v) => !v)}>
+            <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
+              <BoltIcon size={16} /> Live performance &amp; energy flow
+            </span>
+            <span className="perf-chevron" style={{ transform: showPerf ? "rotate(180deg)" : "none" }}>
+              <ChevronDownIcon size={18} />
+            </span>
+          </button>
+          {showPerf && (
+            <div className="surface perf-panel">
+              <SiteMonitor vault={vault} />
+            </div>
+          )}
+        </div>
+      )}
 
       {showDeposit && (
         <DepositModal vault={vault} profile={profile} onClose={() => setShowDeposit(false)} onDone={(amt) => {
