@@ -13,6 +13,13 @@ const STATUS_BADGE: Record<Vault["status"], { cls: string; label: string }> = {
   coming_soon: { cls: "badge-soon", label: "Coming soon" },
 };
 
+const STATUS_CARD: Record<Vault["status"], string> = {
+  active: "vc-active",
+  operational: "vc-operational",
+  fundraising: "vc-fundraising",
+  coming_soon: "vc-pipeline",
+};
+
 export function VaultCard({ vault }: { vault: Vault }) {
   const badge = STATUS_BADGE[vault.status];
   const isShowcase = vault.kind === "showcase";
@@ -20,7 +27,7 @@ export function VaultCard({ vault }: { vault: Vault }) {
   const progress = raiseProgress(vault);
 
   return (
-    <Link href={`/vault/${vault.id}`} className="vault-card">
+    <Link href={`/vault/${vault.id}`} className={`vault-card ${STATUS_CARD[vault.status]}`}>
       <div className="vault-card-top">
         <div style={{ display: "flex", gap: 13, minWidth: 0 }}>
           <span className="vault-thumb">

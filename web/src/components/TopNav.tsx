@@ -5,10 +5,11 @@ import { usePathname } from "next/navigation";
 import { useWallet } from "@/lib/wallet";
 import { fmtAddress } from "@/lib/format";
 import { WalletModal } from "./WalletModal";
-import { BoltIcon, GridIcon, BriefcaseIcon, StoreIcon, WalletIcon } from "./Icons";
+import { BoltIcon, GridIcon, BriefcaseIcon, StoreIcon, WalletIcon, TrendingUpIcon } from "./Icons";
 
 const LINKS = [
-  { href: "/", label: "Dashboard", icon: GridIcon },
+  { href: "/dashboard-v2", label: "Overview", icon: TrendingUpIcon },
+  { href: "/", label: "Vaults", icon: GridIcon },
   { href: "/portfolio", label: "Portfolio", icon: BriefcaseIcon },
   { href: "/marketplace", label: "Marketplace", icon: StoreIcon },
 ];
@@ -51,6 +52,19 @@ export function TopNav() {
             {connecting ? "Connecting…" : "Connect Wallet"}
           </button>
         )}
+      </nav>
+
+      {/* Mobile bottom tab bar */}
+      <nav className="bottom-nav">
+        {LINKS.map((l) => {
+          const Icon = l.icon;
+          return (
+            <Link key={l.href} href={l.href} className={`bottom-nav-item ${isActive(l.href) ? "active" : ""}`}>
+              <Icon size={21} />
+              <span>{l.label}</span>
+            </Link>
+          );
+        })}
       </nav>
 
       {modal && <WalletModal onClose={() => setModal(false)} />}

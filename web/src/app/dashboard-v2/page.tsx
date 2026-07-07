@@ -1,0 +1,141 @@
+import { Odometer } from "@/components/Odometer";
+import { OverviewChart } from "@/components/OverviewChart";
+import { VaultsOverview } from "@/components/VaultsOverview";
+import { NetworkPanel } from "@/components/NetworkPanel";
+import { Sparkline } from "@/components/Sparkline";
+import { PROTOCOL, CAPACITY, tvlSeries, apySeries } from "@/lib/protocol";
+import { fmtMoney, fmtPct, bpsToPct } from "@/lib/format";
+
+function Ticks() {
+  return (
+    <>
+      <span className="tick tl" />
+      <span className="tick tr" />
+      <span className="tick bl" />
+      <span className="tick br" />
+    </>
+  );
+}
+
+function SectionHead({ index, name, meta }: { index: string; name: string; meta?: string }) {
+  return (
+    <div className="sec-head">
+      <span className="sec-index">{index}</span>
+      <span className="sec-name">{name}</span>
+      <span className="sec-rule" />
+      {meta && <span className="sec-meta">{meta}</span>}
+    </div>
+  );
+}
+
+export default function DashboardV2Page() {
+  const tvl = tvlSeries("ALL");
+  const tvlSpark = tvl.deployed.map((d, i) => d + tvl.reserves[i]);
+  const apySpark = apySeries("ALL").values;
+
+  return (
+    <main className="page">
+      {/* Status ribbon */}
+      <div className="ribbon">
+        <div className="ribbon-group">
+          <span className="ribbon-item ribbon-live">
+            <span className="dot pulse" style={{ background: "var(--accent)" }} />
+            All systems operational
+          </span>
+          <span className="ribbon-item">XRPL EVM Sidechain — Testnet · Chain 1449000</span>
+        </div>
+        <div className="ribbon-group ribbon-right">
+          <span className="ribbon-item">Vault standard: ERC-4626 / ERC-7540</span>
+          <span className="ribbon-item">Telemetry: 15-min intervals</span>
+        </div>
+      </div>
+
+      <div className="page-head">
+        <div className="page-title">Protocol Overview</div>
+        <div className="page-sub">
+          Institutional access to distributed battery storage — value locked, staking yield, and deployed
+          capacity across the vault network.
+        </div>
+      </div>
+
+      {/* 01 — Hero metrics */}
+      <SectionHead index="01" name="Protocol metrics" meta="Updated per block" />
+      <div className="panel">
+        <Ticks />
+        <div className="v2-metrics">
+          <div className="v2-metric">
+            <div className="v2-metric-top">
+              <span className="caps">Total Value Locked</span>
+              <Sparkline data={tvlSpark} width={64} height={20} fill={false} />
+            </div>
+            <div className="v2-metric-value num">{fmtMoney(PROTOCOL.tvl, "USD", 0)}</div>
+            <div className="v2-metric-sub">Cash reserves, vaults, plus accrued yield</div>
+          </div>
+
+          <div className="v2-metric">
+            <div className="v2-metric-top">
+              <span className="caps">Staking APY</span>
+              <Sparkline data={apySpark} width={64} height={20} fill={false} />
+            </div>
+            <div className="v2-metric-value num">
+              {fmtPct(bpsToPct(PROTOCOL.stakingApyBps), 2)}
+              <span className="v2-projected">{fmtPct(bpsToPct(PROTOCOL.projectedApyBps), 2)} proj</span>
+            </div>
+            <div className="v2-metric-sub accent">
+              +{fmtPct(bpsToPct(PROTOCOL.pipelineApyDeltaBps), 2)} projected from pipeline
+            </div>
+          </div>
+
+          <div className="v2-metric">
+            <div className="v2-metric-top">
+              <span className="caps">Total Capacity</span>
+            </div>
+            <div className="v2-metric-value num">
+              {CAPACITY.mw.toFixed(1)} <span className="v2-metric-unit">MW</span>
+            </div>
+            <div className="v2-metric-sub">
+              {CAPACITY.mwh.toFixed(1)} MWh storage across {CAPACITY.sites} sites
+            </div>
+          </div>
+
+          <div className="v2-metric">
+            <div className="v2-metric-top">
+              <span className="caps">Cumulative Yield</span>
+            </div>
+            <div className="v2-metric-value">
+              <Odometer startValue={PROTOCOL.cumulativeYield} ratePerSecond={0.05} />
+            </div>
+            <div className="v2-metric-sub">Depositor yield and protocol fees, realtime</div>
+          </div>
+        </div>
+      </div>
+
+      {/* 02 — Charts */}
+      <SectionHead index="02" name="Performance" meta="TVL & staking APY — historical" />
+      <div className="v2-charts">
+        <OverviewChart type="tvl" title="Total Value Locked" />
+        <OverviewChart type="apy" title="Staking APY" />
+      </div>
+
+      {/* 03 — Global network */}
+      <SectionHead
+        index="03"
+        name="Global network"
+        meta={`${CAPACITY.sites} sites · ${CAPACITY.mw.toFixed(1)} MW / ${CAPACITY.mwh.toFixed(1)} MWh`}
+      />
+      <div className="panel">
+        <Ticks />
+        <NetworkPanel />
+      </div>
+
+      {/* 04 — Vaults */}
+      <SectionHead index="04" name="Vault allocation" meta="Deployed & pipeline capital" />
+      <VaultsOverview />
+
+      <footer className="v2-footer">
+        <span>Megawatt Protocol — Tokenized Energy Infrastructure</span>
+        <span>XRPL EVM Sidechain · ERC-4626 / ERC-7540 · Testnet Build</span>
+      </footer>
+    </main>
+  );
+}
