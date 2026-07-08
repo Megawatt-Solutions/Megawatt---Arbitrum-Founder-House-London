@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import { useWallet } from "@/lib/wallet";
 import { fmtAddress } from "@/lib/format";
 import { WalletModal } from "./WalletModal";
-import { BoltIcon, GridIcon, BriefcaseIcon, StoreIcon, WalletIcon, TrendingUpIcon } from "./Icons";
+import { BrandMark } from "./BrandMark";
+import { GridIcon, BriefcaseIcon, StoreIcon, WalletIcon, TrendingUpIcon } from "./Icons";
 
 const LINKS = [
   { href: "/dashboard-v2", label: "Overview", icon: TrendingUpIcon },
@@ -26,7 +27,7 @@ export function TopNav() {
     <>
       <nav className="nav">
         <Link href="/" className="nav-brand">
-          <span className="nav-logo"><BoltIcon size={17} /></span>
+          <BrandMark height={15} color="var(--accent)" />
           Megawatt
         </Link>
 

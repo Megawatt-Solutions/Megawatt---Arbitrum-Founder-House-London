@@ -1,4 +1,5 @@
 import { Odometer } from "@/components/Odometer";
+import { BrandMark } from "@/components/BrandMark";
 import { OverviewChart } from "@/components/OverviewChart";
 import { VaultsOverview } from "@/components/VaultsOverview";
 import { NetworkPanel } from "@/components/NetworkPanel";
@@ -133,7 +134,10 @@ export default function DashboardV2Page() {
       <VaultsOverview />
 
       <footer className="v2-footer">
-        <span>Megawatt Protocol — Tokenized Energy Infrastructure</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 9 }}>
+          <BrandMark height={10} color="var(--muted)" />
+          Megawatt Protocol — Tokenized Energy Infrastructure
+        </span>
         <span>XRPL EVM Sidechain · ERC-4626 / ERC-7540 · Testnet Build</span>
       </footer>
     </main>
