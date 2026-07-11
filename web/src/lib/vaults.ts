@@ -1,18 +1,16 @@
 // ─────────────────────────────────────────────────────────────
-// Seed vault data. Two off-chain "showcase" vaults mirror our real
-// operational BESS sites; the rest are on-chain investable vaults
-// (ERC-4626 + async redeem). `bess-koper-01` reproduces the product
-// screenshot so the design is instantly recognisable.
-//
-// Addresses on on-chain vaults are PLACEHOLDERS until the contracts
-// are deployed — the live adapter will overwrite them.
+// Seed vault data. The two ACTIVE vaults mirror our real operational
+// BESS sites (Ljubljana + Metlika, off-chain showcases with live
+// telemetry); Zagreb + Trieste are on-chain fundraising vaults
+// (deployed on Arbitrum Sepolia); the pipeline holds committed
+// future sites across Europe.
 // ─────────────────────────────────────────────────────────────
 import type { Vault } from "./types";
 
 export const DEPLOYER = "0x30cA4f7E57B8a4b057f5F358d6697e8b81541a76";
 
 export const VAULTS: Vault[] = [
-  // ─── Showcase #1 — Ljubljana (real, operational, off-chain) ───
+  // ─── Active #1 — Ljubljana (real, operational, off-chain) ─────
   {
     id: "bess-ljubljana-01",
     kind: "showcase",
@@ -24,33 +22,33 @@ export const VAULTS: Vault[] = [
     flag: "🇸🇮",
     currency: "EUR",
     symbol: "mwLJU01",
-    apyBps: 2170, // gross yield on capex (showcase headline)
-    split: { depositorBps: 1080, protocolFeeBps: 380, sinkingFundBps: 460, reserveBps: 250 },
-    spec: { powerKw: 300, energyKwh: 600, chemistry: "LFP", hasSolar: true, solarKwp: 250, units: 8 },
+    apyBps: 1220, // gross yield on capex (showcase headline)
+    split: { depositorBps: 850, protocolFeeBps: 160, sinkingFundBps: 140, reserveBps: 70 },
+    spec: { powerKw: 350, energyKwh: 550, chemistry: "LFP", hasSolar: true, solarKwp: 250, units: 8 },
     metrics: {
       socPct: 64,
-      healthPct: 99.5,
+      healthPct: 98.9,
       roundTripEff: 0.931,
-      lifetimeCycles: 542,
-      chargedMwh: 118.4,
-      dischargedMwh: 110.2,
-      activations: 96,
-      grossYtd: 23920,
-      netYtd: 19850,
+      lifetimeCycles: 705,
+      chargedMwh: 361.4,
+      dischargedMwh: 336.2,
+      activations: 268,
+      grossYtd: 15620,
+      netYtd: 12950,
     },
     capex: 240000,
     raised: 240000,
     totalShares: 240000,
-    sinkingFundBalance: 9820,
-    annualRevenue: 52000,
-    annualRevenueRange: [45000, 60000],
-    commissioned: "2024-05-01",
+    sinkingFundBalance: 6790,
+    annualRevenue: 29280,
+    annualRevenueRange: [26000, 32000],
+    commissioned: "2024-07-01",
     description:
-      "Co-located 300 kW / 600 kWh battery + 250 kWp rooftop solar in Ljubljana. Peak-shaving and intraday arbitrage on the Slovenian market. Owned and operated by Megawatt.",
+      "Co-located 350 kW / 550 kWh battery + 250 kWp rooftop solar in Ljubljana, operating for two years. Peak-shaving and intraday arbitrage on the Slovenian market. Owned and operated by Megawatt.",
     seed: 101,
   },
 
-  // ─── Showcase #2 — Metlika (real, operational, off-chain) ─────
+  // ─── Active #2 — Metlika (real, operational, off-chain) ───────
   {
     id: "bess-metlika-01",
     kind: "showcase",
@@ -60,123 +58,35 @@ export const VAULTS: Vault[] = [
     location: "Metlika, Slovenia",
     country: "Slovenia",
     flag: "🇸🇮",
-    currency: "USD",
-    symbol: "mwMET01",
-    apyBps: 3600, // gross yield on capex
-    split: { depositorBps: 1800, protocolFeeBps: 600, sinkingFundBps: 750, reserveBps: 450 },
-    spec: { powerKw: 3200, energyKwh: 6400, chemistry: "LFP", hasSolar: false, units: 16 },
-    metrics: {
-      socPct: 73.5,
-      healthPct: 99.2,
-      roundTripEff: 0.924,
-      lifetimeCycles: 1284,
-      chargedMwh: 1483.6,
-      dischargedMwh: 1364.9,
-      activations: 612,
-      grossYtd: 414000,
-      netYtd: 343200,
-    },
-    capex: 2500000,
-    raised: 2500000,
-    totalShares: 2500000,
-    sinkingFundBalance: 156000,
-    annualRevenue: 900000,
-    annualRevenueRange: [820000, 960000],
-    commissioned: "2023-09-01",
-    description:
-      "Utility-scale 3.2 MW / 6.4 MWh lithium battery in Metlika providing frequency regulation (FCR/aFRR) and wholesale arbitrage. Megawatt's flagship operational site.",
-    seed: 202,
-  },
-
-  // ─── On-chain #1 — Koper 01 (active) — mirrors the screenshot ──
-  {
-    id: "bess-koper-01",
-    kind: "onchain",
-    status: "active",
-    name: "BESS Koper 01",
-    shortName: "Koper 01",
-    location: "Koper, Slovenia",
-    country: "Slovenia",
-    flag: "🇸🇮",
     currency: "EUR",
-    symbol: "mwKOP01",
-    apyBps: 1200,
-    split: { depositorBps: 1200, protocolFeeBps: 450, sinkingFundBps: 550, reserveBps: 350 },
+    symbol: "mwMET01",
+    apyBps: 1340, // gross yield on capex
+    split: { depositorBps: 940, protocolFeeBps: 170, sinkingFundBps: 150, reserveBps: 80 },
     spec: { powerKw: 3200, energyKwh: 6400, chemistry: "LFP", hasSolar: false, units: 16 },
     metrics: {
       socPct: 73.5,
-      healthPct: 99.2,
+      healthPct: 99.4,
       roundTripEff: 0.924,
-      lifetimeCycles: 1284,
-      chargedMwh: 221.84,
-      dischargedMwh: 187.07,
-      activations: 227,
-      grossYtd: 179.53,
-      netYtd: 160.47,
+      lifetimeCycles: 328,
+      chargedMwh: 1980.5,
+      dischargedMwh: 1822.3,
+      activations: 412,
+      grossYtd: 159700,
+      netYtd: 132600,
     },
     capex: 2200000,
     raised: 2200000,
     totalShares: 2200000,
-    sinkingFundBalance: 44.12,
-    annualRevenue: 561000,
-    yieldDistributed: 76.8,
-    yieldClaimed: 27.15,
-    commissioned: "2025-11-01",
-    addresses: {
-      vault: "0x60c22e075d2ce091B1dCD7F01a9e454553a6846A",
-      receiptToken: "0xAa045dA85C64E1EF7dB51F90108993EF1F93f91A",
-      dataStore: "0x70d7a583Ae844cFA7a2470b0f5173A1d16fD2B6F",
-    },
+    sinkingFundBalance: 30200,
+    annualRevenue: 294800,
+    annualRevenueRange: [270000, 315000],
+    commissioned: "2025-08-01",
     description:
-      "On-chain investable vault backing a 3.2 MW / 6.4 MWh battery in Koper. Yield is distributed to depositors and (fast-follow) ZK-verified against on-chain BESS telemetry.",
-    seed: 303,
+      "Utility-scale 3.2 MW / 6.4 MWh lithium battery in Metlika providing frequency regulation (FCR/aFRR) and wholesale arbitrage. Megawatt's flagship site, operating since last summer.",
+    seed: 202,
   },
 
-  // ─── On-chain #2 — Graz 01 (active, more mature) ──────────────
-  {
-    id: "bess-graz-01",
-    kind: "onchain",
-    status: "active",
-    name: "BESS Graz 01",
-    shortName: "Graz 01",
-    location: "Graz, Austria",
-    country: "Austria",
-    flag: "🇦🇹",
-    currency: "EUR",
-    symbol: "mwGRZ01",
-    apyBps: 1150,
-    split: { depositorBps: 1150, protocolFeeBps: 450, sinkingFundBps: 600, reserveBps: 350 },
-    spec: { powerKw: 2000, energyKwh: 4000, chemistry: "LFP", hasSolar: false, units: 12 },
-    metrics: {
-      socPct: 58,
-      healthPct: 98.7,
-      roundTripEff: 0.918,
-      lifetimeCycles: 890,
-      chargedMwh: 142.1,
-      dischargedMwh: 130.4,
-      activations: 168,
-      grossYtd: 142.88,
-      netYtd: 121.3,
-    },
-    capex: 1400000,
-    raised: 1400000,
-    totalShares: 1400000,
-    sinkingFundBalance: 118.4,
-    annualRevenue: 357000,
-    yieldDistributed: 1840.5,
-    yieldClaimed: 980.0,
-    commissioned: "2025-07-15",
-    addresses: {
-      vault: "0x1bda0E4A69879fdeA8762f4E50452Ec8D43b7420",
-      receiptToken: "0x99C552e2218C184EBdebd5f6Fd5d3Ff934358c40",
-      dataStore: "0x0FF8cF2C8535A9Dc63b64C2c52dc06ECd8f0291C",
-    },
-    description:
-      "On-chain investable vault backing a 2 MW / 4 MWh battery in Graz, trading on the Austrian balancing market.",
-    seed: 404,
-  },
-
-  // ─── On-chain #3 — Zagreb 01 (fundraising) ────────────────────
+  // ─── On-chain #1 — Zagreb 01 (fundraising) ────────────────────
   {
     id: "bess-zagreb-01",
     kind: "onchain",
@@ -208,15 +118,16 @@ export const VAULTS: Vault[] = [
     sinkingFundBalance: 0,
     annualRevenue: 459000,
     addresses: {
-      vault: "0xed1721d50847b59fe80175CE76b9FcA478C08aC9",
-      receiptToken: "0xDa977f43C419bD83d7d6a4C933872f011122e3D5",
+      // Live on Arbitrum Sepolia — shares ARE the receipt token (ERC-20 vault shares).
+      vault: "0x2DAf9D7BeE23e65344431850Ce28b54C63244faD",
+      receiptToken: "0x2DAf9D7BeE23e65344431850Ce28b54C63244faD",
     },
     description:
       "Fundraising for a 2.5 MW / 5 MWh battery in Zagreb. Capital is drawn down to fund construction once the target is reached.",
     seed: 505,
   },
 
-  // ─── On-chain #4 — Trieste 01 (fundraising, nearly full) ──────
+  // ─── On-chain #2 — Trieste 01 (fundraising, nearly full) ──────
   {
     id: "bess-trieste-01",
     kind: "onchain",
@@ -248,15 +159,16 @@ export const VAULTS: Vault[] = [
     sinkingFundBalance: 0,
     annualRevenue: 178500,
     addresses: {
-      vault: "0xC0fFEe254729296a45a3885639AC7E10F9d54979",
-      receiptToken: "0x9A8c4F1B2e3D5a6789012345678901234567aBcD",
+      // Live on Arbitrum Sepolia — shares ARE the receipt token (ERC-20 vault shares).
+      vault: "0xdb649C2086595CD798d7dEB9974634C9f3b5A44C",
+      receiptToken: "0xdb649C2086595CD798d7dEB9974634C9f3b5A44C",
     },
     description:
       "Fundraising for a 1 MW / 2 MWh battery in Trieste, targeting intraday arbitrage on the Italian market.",
     seed: 606,
   },
 
-  // ─── On-chain #5 — Belgrade 01 (coming soon) ──────────────────
+  // ─── Pipeline #1 — Belgrade 01 ────────────────────────────────
   {
     id: "bess-belgrade-01",
     kind: "onchain",
@@ -287,9 +199,122 @@ export const VAULTS: Vault[] = [
     totalShares: 0,
     sinkingFundBalance: 0,
     annualRevenue: 832000,
+    addresses: {
+      // Live on Arbitrum Sepolia (Pipeline stage — deposits closed until opened).
+      vault: "0xb678D9fb980F787c307BAFa617cc8d0048b8a89F",
+      receiptToken: "0xb678D9fb980F787c307BAFa617cc8d0048b8a89F",
+    },
     description:
       "Pipeline — a 5 MW / 10 MWh battery in Belgrade. Opens for fundraising next quarter.",
     seed: 707,
+  },
+
+  // ─── Pipeline #2 — Leipzig 01 ─────────────────────────────────
+  {
+    id: "bess-leipzig-01",
+    kind: "onchain",
+    status: "coming_soon",
+    name: "BESS Leipzig 01",
+    shortName: "Leipzig 01",
+    location: "Leipzig, Germany",
+    country: "Germany",
+    flag: "🇩🇪",
+    currency: "EUR",
+    symbol: "mwLPZ01",
+    apyBps: 1240,
+    split: { depositorBps: 880, protocolFeeBps: 160, sinkingFundBps: 130, reserveBps: 70 },
+    spec: { powerKw: 3000, energyKwh: 6000, chemistry: "LFP", hasSolar: false, units: 12 },
+    metrics: {
+      socPct: 0,
+      healthPct: 100,
+      roundTripEff: 0.93,
+      lifetimeCycles: 0,
+      chargedMwh: 0,
+      dischargedMwh: 0,
+      activations: 0,
+      grossYtd: 0,
+      netYtd: 0,
+    },
+    capex: 2100000,
+    raised: 0,
+    totalShares: 0,
+    sinkingFundBalance: 0,
+    annualRevenue: 260400,
+    description:
+      "Pipeline — a 3 MW / 6 MWh battery near Leipzig bidding into the German aFRR and intraday markets.",
+    seed: 808,
+  },
+
+  // ─── Pipeline #3 — Vilnius 01 ─────────────────────────────────
+  {
+    id: "bess-vilnius-01",
+    kind: "onchain",
+    status: "coming_soon",
+    name: "BESS Vilnius 01",
+    shortName: "Vilnius 01",
+    location: "Vilnius, Lithuania",
+    country: "Lithuania",
+    flag: "🇱🇹",
+    currency: "EUR",
+    symbol: "mwVLN01",
+    apyBps: 1310,
+    split: { depositorBps: 930, protocolFeeBps: 170, sinkingFundBps: 140, reserveBps: 70 },
+    spec: { powerKw: 2000, energyKwh: 4000, chemistry: "LFP", hasSolar: false, units: 8 },
+    metrics: {
+      socPct: 0,
+      healthPct: 100,
+      roundTripEff: 0.929,
+      lifetimeCycles: 0,
+      chargedMwh: 0,
+      dischargedMwh: 0,
+      activations: 0,
+      grossYtd: 0,
+      netYtd: 0,
+    },
+    capex: 1400000,
+    raised: 0,
+    totalShares: 0,
+    sinkingFundBalance: 0,
+    annualRevenue: 183400,
+    description:
+      "Pipeline — a 2 MW / 4 MWh battery in Vilnius serving the Baltic FCR market after desynchronisation from the Russian grid.",
+    seed: 909,
+  },
+
+  // ─── Pipeline #4 — Bucharest 01 ───────────────────────────────
+  {
+    id: "bess-bucharest-01",
+    kind: "onchain",
+    status: "coming_soon",
+    name: "BESS Bucharest 01",
+    shortName: "Bucharest 01",
+    location: "Bucharest, Romania",
+    country: "Romania",
+    flag: "🇷🇴",
+    currency: "EUR",
+    symbol: "mwBUC01",
+    apyBps: 1280,
+    split: { depositorBps: 900, protocolFeeBps: 170, sinkingFundBps: 140, reserveBps: 70 },
+    spec: { powerKw: 2500, energyKwh: 5000, chemistry: "LFP", hasSolar: false, units: 10 },
+    metrics: {
+      socPct: 0,
+      healthPct: 100,
+      roundTripEff: 0.93,
+      lifetimeCycles: 0,
+      chargedMwh: 0,
+      dischargedMwh: 0,
+      activations: 0,
+      grossYtd: 0,
+      netYtd: 0,
+    },
+    capex: 1700000,
+    raised: 0,
+    totalShares: 0,
+    sinkingFundBalance: 0,
+    annualRevenue: 217600,
+    description:
+      "Pipeline — a 2.5 MW / 5 MWh battery in Bucharest targeting Romania's fast-growing balancing market.",
+    seed: 1010,
   },
 ];
 

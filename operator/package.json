@@ -1,0 +1,13 @@
+{
+  "name": "megawatt-operator",
+  "private": true,
+  "type": "module",
+  "description": "Operator daemon: accrues + distributes vault yield on Arbitrum Sepolia",
+  "scripts": {
+    "once": "node distribute.mjs --once",
+    "dev": "node distribute.mjs --interval 600"
+  },
+  "dependencies": {
+    "ethers": "^6.13.0"
+  }
+}

@@ -4,8 +4,9 @@ import { OverviewChart } from "@/components/OverviewChart";
 import { VaultsOverview } from "@/components/VaultsOverview";
 import { NetworkPanel } from "@/components/NetworkPanel";
 import { Sparkline } from "@/components/Sparkline";
-import { PROTOCOL, CAPACITY, tvlSeries, apySeries } from "@/lib/protocol";
-import { fmtMoney, fmtPct, bpsToPct } from "@/lib/format";
+import { PROTOCOL, CAPACITY, OPERATIONAL_VALUE, ONCHAIN_TVL_FALLBACK, tvlSeries, apySeries } from "@/lib/protocol";
+import { TvlMetric } from "@/components/TvlMetric";
+import { fmtPct, bpsToPct } from "@/lib/format";
 
 function Ticks() {
   return (
@@ -43,7 +44,7 @@ export default function DashboardV2Page() {
             <span className="dot pulse" style={{ background: "var(--accent)" }} />
             All systems operational
           </span>
-          <span className="ribbon-item">XRPL EVM Sidechain — Testnet · Chain 1449000</span>
+          <span className="ribbon-item">Arbitrum Sepolia — Testnet · Chain 421614</span>
         </div>
         <div className="ribbon-group ribbon-right">
           <span className="ribbon-item">Vault standard: ERC-4626 / ERC-7540</span>
@@ -69,8 +70,7 @@ export default function DashboardV2Page() {
               <span className="caps">Total Value Locked</span>
               <Sparkline data={tvlSpark} width={64} height={20} fill={false} />
             </div>
-            <div className="v2-metric-value num">{fmtMoney(PROTOCOL.tvl, "USD", 0)}</div>
-            <div className="v2-metric-sub">Cash reserves, vaults, plus accrued yield</div>
+            <TvlMetric operational={OPERATIONAL_VALUE} fallbackOnchain={ONCHAIN_TVL_FALLBACK} />
           </div>
 
           <div className="v2-metric">
@@ -138,7 +138,7 @@ export default function DashboardV2Page() {
           <BrandMark height={10} color="var(--muted)" />
           Megawatt Protocol — Tokenized Energy Infrastructure
         </span>
-        <span>XRPL EVM Sidechain · ERC-4626 / ERC-7540 · Testnet Build</span>
+        <span>Arbitrum Sepolia · ERC-4626 / ERC-7540 · Testnet Build</span>
       </footer>
     </main>
   );

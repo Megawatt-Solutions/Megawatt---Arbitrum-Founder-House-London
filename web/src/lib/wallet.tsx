@@ -1,14 +1,14 @@
 "use client";
 // ─────────────────────────────────────────────────────────────
-// Wallet + toast providers. Wallet state is mocked for the design-first
-// build (defaults to connected so the populated UI is visible), but the
-// shape matches what an ethers BrowserProvider integration will expose:
-// swap `connect()` to request accounts and read the chain.
+// Wallet + toast providers. Connects to the injected wallet
+// (MetaMask et al.), switches it to Arbitrum Sepolia, and keeps a
+// live MockUSDC balance on the profile. KYC level is presented as
+// verified — the on-chain CredentialOracle runs in open mode.
 // ─────────────────────────────────────────────────────────────
-import { createContext, useContext, useState, useCallback, useRef } from "react";
+import { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
 import type { ReactNode } from "react";
 import type { UserProfile } from "./types";
-import { CURRENT_USER } from "./user";
+import { injected, ensureChain, readUsdcBalance, fromUsdc6, errMessage } from "./web3";
 
 interface WalletState {
   connected: boolean;
@@ -16,9 +16,14 @@ interface WalletState {
   profile: UserProfile | null;
   connect: () => void;
   disconnect: () => void;
+  /** Re-read on-chain balances for the connected account. */
+  refresh: () => Promise<void>;
 }
 
 const WalletContext = createContext<WalletState | null>(null);
+
+/** Set when the user explicitly disconnects; blocks silent auto-reconnect. */
+const DISCONNECTED_KEY = "mw.walletDisconnected";
 
 export interface Toast {
   id: number;
@@ -31,26 +36,20 @@ interface ToastState {
 }
 const ToastContext = createContext<ToastState | null>(null);
 
+function buildProfile(address: string, usdcBalance: number): UserProfile {
+  return {
+    address,
+    kycLevel: 2,
+    kycIssuer: "Megawatt Compliance · CredentialOracle",
+    kycIssuedAt: "2026-07-10",
+    usdcBalance,
+  };
+}
+
 export function AppProviders({ children }: { children: ReactNode }) {
-  // Default connected so the populated dashboard/portfolio is visible.
-  const [connected, setConnected] = useState(true);
+  const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
-  const [profile, setProfile] = useState<UserProfile | null>(CURRENT_USER);
-
-  const connect = useCallback(() => {
-    setConnecting(true);
-    // Mock connect — replace with ethers `eth_requestAccounts` + chain check.
-    setTimeout(() => {
-      setProfile(CURRENT_USER);
-      setConnected(true);
-      setConnecting(false);
-    }, 450);
-  }, []);
-
-  const disconnect = useCallback(() => {
-    setConnected(false);
-    setProfile(null);
-  }, []);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const idRef = useRef(1);
@@ -60,8 +59,93 @@ export function AppProviders({ children }: { children: ReactNode }) {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200);
   }, []);
 
+  const adopt = useCallback(async (address: string) => {
+    let balance = 0;
+    try {
+      balance = fromUsdc6(await readUsdcBalance(address));
+    } catch {
+      // RPC hiccup — profile still connects; balance refreshes later.
+    }
+    setProfile(buildProfile(address, balance));
+    setConnected(true);
+  }, []);
+
+  const connect = useCallback(async () => {
+    const eth = injected();
+    if (!eth) {
+      notify("No wallet found — install MetaMask to connect");
+      return;
+    }
+    setConnecting(true);
+    try {
+      localStorage.removeItem(DISCONNECTED_KEY);
+      const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
+      if (!accounts?.length) throw new Error("No account authorized");
+      await ensureChain(eth);
+      await adopt(accounts[0]);
+    } catch (e) {
+      notify(errMessage(e));
+    } finally {
+      setConnecting(false);
+    }
+  }, [adopt, notify]);
+
+  const disconnect = useCallback(() => {
+    localStorage.setItem(DISCONNECTED_KEY, "1");
+    setConnected(false);
+    setProfile(null);
+    // Ask the wallet to forget the site permission entirely so the next
+    // connect re-prompts; older wallets without revoke just fall back to
+    // the local flag above.
+    injected()
+      ?.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] })
+      .catch(() => {});
+  }, []);
+
+  const refresh = useCallback(async () => {
+    const address = profile?.address;
+    if (!address) return;
+    try {
+      const balance = fromUsdc6(await readUsdcBalance(address));
+      setProfile((p) => (p && p.address === address ? { ...p, usdcBalance: balance } : p));
+    } catch {
+      // keep the stale balance on RPC failure
+    }
+  }, [profile?.address]);
+
+  // Silent reconnect for already-authorized accounts + wallet event wiring.
+  useEffect(() => {
+    const eth = injected();
+    if (!eth) return;
+
+    if (!localStorage.getItem(DISCONNECTED_KEY)) {
+      (eth.request({ method: "eth_accounts" }) as Promise<string[]>)
+        .then((accounts) => {
+          if (accounts?.length) void adopt(accounts[0]);
+        })
+        .catch(() => {});
+    }
+
+    const onAccounts = (...args: unknown[]) => {
+      if (localStorage.getItem(DISCONNECTED_KEY)) return;
+      const accounts = args[0] as string[];
+      if (accounts?.length) void adopt(accounts[0]);
+      else {
+        setConnected(false);
+        setProfile(null);
+      }
+    };
+    const onChain = () => window.location.reload();
+    eth.on?.("accountsChanged", onAccounts);
+    eth.on?.("chainChanged", onChain);
+    return () => {
+      eth.removeListener?.("accountsChanged", onAccounts);
+      eth.removeListener?.("chainChanged", onChain);
+    };
+  }, [adopt]);
+
   return (
-    <WalletContext.Provider value={{ connected, connecting, profile, connect, disconnect }}>
+    <WalletContext.Provider value={{ connected, connecting, profile, connect, disconnect, refresh }}>
       <ToastContext.Provider value={{ toasts, notify }}>
         {children}
         <ToastViewport />

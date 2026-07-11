@@ -1,0 +1,10 @@
+{
+  "chainId": 421614,
+  "credentialOracle": "0x4851abE7Ae1dc3c20108540f86a14c5B5f1FA2e0",
+  "deployer": "0x35679E61E5946F711ca1288255B1F32376C416D7",
+  "marketplace": "0x9f3F62dD3dE0aD5bea5bfbf4dCd49576Fc12b249",
+  "mockUsdc": "0x4232353b04a62547eAB29217332e1340c917e852",
+  "vaultBelgrade": "0xb678D9fb980F787c307BAFa617cc8d0048b8a89F",
+  "vaultTrieste": "0xdb649C2086595CD798d7dEB9974634C9f3b5A44C",
+  "vaultZagreb": "0x2DAf9D7BeE23e65344431850Ce28b54C63244faD"
+}

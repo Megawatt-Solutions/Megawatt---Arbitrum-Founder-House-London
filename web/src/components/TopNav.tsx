@@ -6,6 +6,7 @@ import { useWallet } from "@/lib/wallet";
 import { fmtAddress } from "@/lib/format";
 import { WalletModal } from "./WalletModal";
 import { BrandMark } from "./BrandMark";
+import { ChainSelect } from "./ChainSelect";
 import { GridIcon, BriefcaseIcon, StoreIcon, WalletIcon, TrendingUpIcon } from "./Icons";
 
 const LINKS = [
@@ -41,18 +42,21 @@ export function TopNav() {
 
         <div className="nav-spacer" />
 
-        {connected && profile ? (
-          <button className="wallet-pill" onClick={() => setModal(true)}>
-            <span className="wallet-avatar" />
-            <span className="num">{fmtAddress(profile.address)}</span>
-            <span className="wallet-dot" />
-          </button>
-        ) : (
-          <button className="connect-btn" onClick={connect} disabled={connecting}>
-            <WalletIcon size={16} />
-            {connecting ? "Connecting…" : "Connect Wallet"}
-          </button>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <ChainSelect />
+          {connected && profile ? (
+            <button className="wallet-pill" onClick={() => setModal(true)}>
+              <span className="wallet-avatar" />
+              <span className="num">{fmtAddress(profile.address)}</span>
+              <span className="wallet-dot" />
+            </button>
+          ) : (
+            <button className="connect-btn" onClick={connect} disabled={connecting}>
+              <WalletIcon size={16} />
+              {connecting ? "Connecting…" : "Connect Wallet"}
+            </button>
+          )}
+        </div>
       </nav>
 
       {/* Mobile bottom tab bar */}

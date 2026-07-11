@@ -1,7 +1,7 @@
 # Megawatt ⚡ — Interface
 
-Tokenized **Battery Energy Storage System (BESS)** investment platform on the
-**XRPL EVM Sidechain**. Investors deposit stablecoins into vaults backed by
+Tokenized **Battery Energy Storage System (BESS)** investment platform on
+**Arbitrum**. Investors deposit stablecoins into vaults backed by
 physical battery farms, receive a tradeable **yield-receipt token**, earn yield,
 and trade their positions on a secondary marketplace.
 
@@ -27,7 +27,7 @@ and trade their positions on a secondary marketplace.
 ```
 megawatt-interface/
 ├── web/          # Next.js 16 frontend (dark mode) — the app
-├── contracts/    # Foundry: ERC-4626/7540 vaults, KYC oracle, marketplace (added next)
+├── contracts/    # Foundry: vaults (4626/7540-style), MockUSDC, KYC oracle, marketplace
 ├── simulator/    # BESS data simulator (added next)
 ├── .env.example  # env template — copy to .env, never commit the real one
 └── README.md
@@ -44,10 +44,24 @@ megawatt-interface/
 
 | | |
 |---|---|
-| Chain | XRPL EVM Sidechain — Testnet |
-| Chain ID | `1449000` |
-| RPC | `https://rpc.testnet.xrplevm.org` |
-| Explorer | `https://explorer.testnet.xrplevm.org` |
+| Chain | Arbitrum Sepolia — Testnet |
+| Chain ID | `421614` |
+| RPC | `https://sepolia-rollup.arbitrum.io/rpc` |
+| Explorer | `https://sepolia.arbiscan.io` |
+
+## Deployed contracts (Arbitrum Sepolia, 2026-07-10)
+
+| Contract | Address |
+|---|---|
+| MockUSDC (faucet, 6dp) | `0x4232353b04a62547eAB29217332e1340c917e852` |
+| CredentialOracle (open mode) | `0x4851abE7Ae1dc3c20108540f86a14c5B5f1FA2e0` |
+| Marketplace | `0x9f3F62dD3dE0aD5bea5bfbf4dCd49576Fc12b249` |
+| Vault — Zagreb 01 `mwZAG01` (fundraising) | `0x2DAf9D7BeE23e65344431850Ce28b54C63244faD` |
+| Vault — Trieste 01 `mwTRS01` (fundraising) | `0xdb649C2086595CD798d7dEB9974634C9f3b5A44C` |
+| Vault — Belgrade 01 `mwBEL01` (pipeline) | `0xb678D9fb980F787c307BAFa617cc8d0048b8a89F` |
+
+Deploy: `cd contracts && forge script script/Deploy.s.sol:Deploy --rpc-url arbitrum_sepolia --broadcast`
+(reads `PRIVATE_KEY`/`RPC_URL` from gitignored `contracts/.env`). Tests: `forge test`.
 
 ## Develop
 

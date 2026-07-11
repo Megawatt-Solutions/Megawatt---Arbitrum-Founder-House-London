@@ -4,23 +4,13 @@ import { getVault } from "./vaults";
 /** The connected user's positions (receipt-token holdings). */
 export const POSITIONS: Position[] = [
   {
-    vaultId: "bess-koper-01",
-    shares: 2200000,
-    deposited: 2200000,
-    claimable: 49.65,
-    claimed: 27.15,
+    vaultId: "bess-zagreb-01",
+    shares: 742000,
+    deposited: 742000,
+    claimable: 0,
+    claimed: 0,
     sharePct: 100,
-    costBasis: 2200000,
-    acquiredVia: "deposit",
-  },
-  {
-    vaultId: "bess-graz-01",
-    shares: 300000,
-    deposited: 300000,
-    claimable: 394.2,
-    claimed: 1210.0,
-    sharePct: (300000 / 1400000) * 100,
-    costBasis: 300000,
+    costBasis: 742000,
     acquiredVia: "deposit",
   },
   {

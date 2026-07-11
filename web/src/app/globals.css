@@ -1426,11 +1426,78 @@ body { overflow-x: hidden; }
   background: rgba(255, 255, 255, 0.015);
 }
 
+/* ─── Chain selector (header) ─────────────────────────────────── */
+.chain-select { position: relative; }
+.chain-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--card);
+  border: 1px solid var(--border-2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.chain-btn:hover { background: var(--card-2); border-color: rgba(255, 255, 255, 0.16); }
+.chain-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 216px;
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  z-index: 70;
+  padding: 4px;
+}
+.chain-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--text);
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+.chain-opt:hover { background: rgba(255, 255, 255, 0.04); }
+.chain-opt-name {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.chain-opt-sub {
+  display: block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+@media (max-width: 640px) {
+  .chain-btn .chain-btn-name { display: none; }
+}
+
 /* Responsive overrides for the chrome above — must stay after the base rules */
 @media (max-width: 900px) {
   .net-grid { grid-template-columns: 1fr; }
   .net-side { border-left: none; border-top: 1px solid var(--border); }
 }
+
 
 
 

@@ -7,7 +7,7 @@ import {
   XIcon, CopyIcon, ExternalLinkIcon, ShieldIcon, VerifiedIcon, CheckIcon,
 } from "./Icons";
 
-const EXPLORER = "https://explorer.testnet.xrplevm.org";
+const EXPLORER = "https://sepolia.arbiscan.io";
 
 export function WalletModal({ onClose }: { onClose: () => void }) {
   const { profile, disconnect } = useWallet();
@@ -48,7 +48,7 @@ export function WalletModal({ onClose }: { onClose: () => void }) {
                 <ExternalLinkIcon size={14} />
               </a>
             </div>
-            <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>XRPL EVM Sidechain · Testnet</div>
+            <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>Arbitrum Sepolia · Testnet</div>
           </div>
         </div>
 

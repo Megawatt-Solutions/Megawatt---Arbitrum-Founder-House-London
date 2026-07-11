@@ -7,16 +7,25 @@ import { VAULTS } from "./vaults";
 
 const SECONDS_PER_YEAR = 365 * 24 * 3600;
 
+/** Value of the two real operational systems (Ljubljana + Metlika capex). */
+export const OPERATIONAL_VALUE = VAULTS.filter((v) => v.kind === "showcase").reduce((s, v) => s + v.capex, 0);
+
+/** Fallback for on-chain deposits before the live RPC read lands (seeded raises). */
+export const ONCHAIN_TVL_FALLBACK = 1_330_000;
+
 export const PROTOCOL = {
-  tvl: 48_920_114,
-  reserves: 10_680_000,
-  stakingApyBps: 1180,
-  projectedApyBps: 1340,
-  pipelineApyDeltaBps: 160,
-  lifetimeDeployed: 182_459_141,
-  currentlyDeployed: 38_240_000,
-  deployedVaultCount: 6,
-  cumulativeYield: 2_126_183.42,
+  // TVL = live on-chain vault deposits + operational site value; the hero
+  // metric reads the on-chain part from Arbitrum Sepolia, this is the SSR fallback.
+  tvl: ONCHAIN_TVL_FALLBACK + OPERATIONAL_VALUE,
+  reserves: OPERATIONAL_VALUE,
+  // Blended across the operational sites (12.2% / 13.4%) and the
+  // fundraising raises (12.5% / 11.8%), weighted by capital.
+  stakingApyBps: 1290,
+  projectedApyBps: 1310,
+  pipelineApyDeltaBps: 20,
+  currentlyDeployed: ONCHAIN_TVL_FALLBACK,
+  // Ljubljana ~2 yrs + Metlika ~11 months of revenue.
+  cumulativeYield: 328_793.42,
 };
 
 /** Live accrual rate for the cumulative-yield odometer ($/sec). */
@@ -174,11 +183,12 @@ export function allocation(): { deployed: AllocSegment[]; pipeline: AllocSegment
 const BESS_COORDS: Record<string, [number, number]> = {
   "bess-ljubljana-01": [46.0569, 14.5058],
   "bess-metlika-01": [45.6477, 15.3142],
-  "bess-koper-01": [45.5481, 13.7302],
-  "bess-graz-01": [47.0707, 15.4395],
   "bess-zagreb-01": [45.815, 15.9819],
   "bess-trieste-01": [45.6495, 13.7768],
   "bess-belgrade-01": [44.7866, 20.4489],
+  "bess-leipzig-01": [51.3397, 12.3731],
+  "bess-vilnius-01": [54.6872, 25.2797],
+  "bess-bucharest-01": [44.4268, 26.1025],
 };
 
 export interface BessMarker {
