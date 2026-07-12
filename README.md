@@ -71,6 +71,3 @@ nvm use            # Node 22 (see .nvmrc)
 npm install
 npm run dev        # http://localhost:3000
 ```
-
-> ⚠️ **Security:** the testnet deployer key lives only in `.env` (gitignored).
-> Treat it as a burner — never reuse it on mainnet.
