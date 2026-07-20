@@ -1,9 +1,12 @@
 # Megawatt ⚡ — Interface
 
-Tokenized **Battery Energy Storage System (BESS)** investment platform on
-**Arbitrum**. Investors deposit stablecoins into vaults backed by
-physical battery farms, receive a tradeable **yield-receipt token**, earn yield,
-and trade their positions on a secondary marketplace.
+Tokenized **Battery Energy Storage System (BESS)** investment platform on the
+**XRP Ledger**. Investors deposit RLUSD into vaults backed by physical battery
+farms, receive a tradeable **receipt token (XRPL MPT)**, earn yield, and trade
+their positions on a secondary marketplace. This branch (`xrpl`) pivots the
+app to **XRPL mainnet**: live wallet connect + account reads today, vault
+tokenization next; it also adds **Spreadcast** (`/spreadcast`), the free
+day-ahead forecasting game built for the XRPL Make Waves cohort.
 
 > Successor to the Paris hackathon prototype — rebuilt dark-mode, with a proper
 > ERC-4626 vault standard and an ERC-7540-style async redemption layer.
@@ -44,12 +47,16 @@ megawatt-interface/
 
 | | |
 |---|---|
-| Chain | Arbitrum Sepolia — Testnet |
-| Chain ID | `421614` |
-| RPC | `https://sepolia-rollup.arbitrum.io/rpc` |
-| Explorer | `https://sepolia.arbiscan.io` |
+| Chain | XRP Ledger — Mainnet |
+| Endpoints | `wss://xrplcluster.com` (fallback `s1`/`s2.ripple.com`) |
+| Explorer | `https://livenet.xrpl.org` |
+| Settlement | RLUSD (`rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De`) |
 
-## Deployed contracts (Arbitrum Sepolia, 2026-07-10)
+## Legacy: Arbitrum Sepolia deployment (main branch, 2026-07-10)
+
+The Solidity contracts below remain live on Arbitrum Sepolia from the
+Arbitrum/Robinhood hacker house build and are no longer wired into the app
+on this branch.
 
 | Contract | Address |
 |---|---|

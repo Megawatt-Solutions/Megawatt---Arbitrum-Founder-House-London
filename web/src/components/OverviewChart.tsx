@@ -46,11 +46,11 @@ export function OverviewChart({ type, title, control }: { type: "tvl" | "apy"; t
         labels: s.labels,
         datasets: [
           {
-            label: "On-chain deposits", data: s.deployed, borderColor: "#8b93f0",
+            label: "Operational sites", data: s.deployed, borderColor: "#34d399",
             backgroundColor: "rgba(139,147,240,0.1)", fill: true, tension: 0, pointRadius: 0, borderWidth: 1.3,
           },
           {
-            label: "Operational sites", data: s.reserves, borderColor: "#34d399",
+            label: "Replacement fund", data: s.reserves, borderColor: "#8b93f0",
             backgroundColor: "rgba(52,211,153,0.09)", fill: true, tension: 0, pointRadius: 0, borderWidth: 1.3,
           },
         ],

@@ -2,12 +2,11 @@
 import { useState } from "react";
 import { useWallet, useToast } from "@/lib/wallet";
 import { KYC_LABEL } from "@/lib/user";
-import { fmtAddress, fmtMoney, fmtDate } from "@/lib/format";
+import { explorerAccount } from "@/lib/xrpl";
+import { fmtAddress, fmtNum, fmtDate } from "@/lib/format";
 import {
   XIcon, CopyIcon, ExternalLinkIcon, ShieldIcon, VerifiedIcon, CheckIcon,
 } from "./Icons";
-
-const EXPLORER = "https://sepolia.arbiscan.io";
 
 export function WalletModal({ onClose }: { onClose: () => void }) {
   const { profile, disconnect } = useWallet();
@@ -44,11 +43,14 @@ export function WalletModal({ onClose }: { onClose: () => void }) {
               <button onClick={copy} style={iconBtn} aria-label="Copy address">
                 {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
               </button>
-              <a href={`${EXPLORER}/address/${profile.address}`} target="_blank" rel="noreferrer" style={iconBtn} aria-label="View on explorer">
+              <a href={explorerAccount(profile.address)} target="_blank" rel="noreferrer" style={iconBtn} aria-label="View on explorer">
                 <ExternalLinkIcon size={14} />
               </a>
             </div>
-            <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>Arbitrum Sepolia · Testnet</div>
+            <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>
+              XRPL · Mainnet · {profile.via === "xaman" ? "Xaman sign-in" : "watch-only"}
+              {profile.funded ? "" : " · unfunded (1 XRP base reserve)"}
+            </div>
           </div>
         </div>
 
@@ -88,17 +90,30 @@ export function WalletModal({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
-        {/* Balances */}
+        {/* Balances — live mainnet reads */}
         <div className="rows">
           <div className="row">
-            <span className="row-key">USDC balance</span>
-            <span className="row-val num">{fmtMoney(profile.usdcBalance, "USD")}</span>
+            <span className="row-key">XRP balance</span>
+            <span className="row-val num">{fmtNum(profile.xrpBalance, 2)} XRP</span>
+          </div>
+          <div className="row">
+            <span className="row-key">RLUSD balance</span>
+            <span className="row-val num">
+              {profile.rlusdTrustline ? `${fmtNum(profile.rlusdBalance, 2)} RLUSD` : "No trustline"}
+            </span>
           </div>
           <div className="row">
             <span className="row-key">Accreditation</span>
             <span className="row-val">{accredited ? "Full (Tier 2)" : verified ? "Basic (Tier 1)" : "—"}</span>
           </div>
         </div>
+
+        {!profile.rlusdTrustline && (
+          <p className="muted" style={{ fontSize: 11.5, marginTop: 10 }}>
+            Vault deposits settle in RLUSD — you&apos;ll be asked to set the RLUSD trustline when fundraising
+            opens.
+          </p>
+        )}
 
         <button
           className="btn btn-ghost btn-block"

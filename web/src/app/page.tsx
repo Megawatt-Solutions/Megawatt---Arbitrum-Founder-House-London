@@ -62,18 +62,22 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      <div className="section-head">
-        <div className="section-title">
-          <span className="dot" style={{ background: "var(--amber)" }} />
-          Fundraising <span className="section-count">{fundraising.length}</span>
-        </div>
-        <span className="muted" style={{ fontSize: 12.5 }}>Open for deposits</span>
-      </div>
-      <div className="vault-grid">
-        {fundraising.map((v) => (
-          <VaultCard key={v.id} vault={v} />
-        ))}
-      </div>
+      {fundraising.length > 0 && (
+        <>
+          <div className="section-head">
+            <div className="section-title">
+              <span className="dot" style={{ background: "var(--amber)" }} />
+              Fundraising <span className="section-count">{fundraising.length}</span>
+            </div>
+            <span className="muted" style={{ fontSize: 12.5 }}>Open for deposits</span>
+          </div>
+          <div className="vault-grid">
+            {fundraising.map((v) => (
+              <VaultCard key={v.id} vault={v} />
+            ))}
+          </div>
+        </>
+      )}
 
       {pipeline.length > 0 && (
         <>

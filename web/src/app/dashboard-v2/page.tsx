@@ -4,9 +4,8 @@ import { OverviewChart } from "@/components/OverviewChart";
 import { VaultsOverview } from "@/components/VaultsOverview";
 import { NetworkPanel } from "@/components/NetworkPanel";
 import { Sparkline } from "@/components/Sparkline";
-import { PROTOCOL, CAPACITY, OPERATIONAL_VALUE, ONCHAIN_TVL_FALLBACK, tvlSeries, apySeries } from "@/lib/protocol";
-import { TvlMetric } from "@/components/TvlMetric";
-import { fmtPct, bpsToPct } from "@/lib/format";
+import { PROTOCOL, CAPACITY, tvlSeries, apySeries } from "@/lib/protocol";
+import { fmtPct, bpsToPct, fmtMoney, fmtCompact } from "@/lib/format";
 
 function Ticks() {
   return (
@@ -44,10 +43,10 @@ export default function DashboardV2Page() {
             <span className="dot pulse" style={{ background: "var(--accent)" }} />
             All systems operational
           </span>
-          <span className="ribbon-item">Arbitrum Sepolia — Testnet · Chain 421614</span>
+          <span className="ribbon-item">XRPL — Mainnet</span>
         </div>
         <div className="ribbon-group ribbon-right">
-          <span className="ribbon-item">Vault standard: ERC-4626 / ERC-7540</span>
+          <span className="ribbon-item">Tokenization: XRPL MPT · RLUSD settlement</span>
           <span className="ribbon-item">Telemetry: 15-min intervals</span>
         </div>
       </div>
@@ -70,7 +69,10 @@ export default function DashboardV2Page() {
               <span className="caps">Total Value Locked</span>
               <Sparkline data={tvlSpark} width={64} height={20} fill={false} />
             </div>
-            <TvlMetric operational={OPERATIONAL_VALUE} fallbackOnchain={ONCHAIN_TVL_FALLBACK} />
+            <div className="v2-metric-value num">{fmtMoney(PROTOCOL.tvl, "USD", 0)}</div>
+            <div className="v2-metric-sub">
+              2 operational sites · {fmtCompact(PROTOCOL.reserves, "USD")} replacement fund
+            </div>
           </div>
 
           <div className="v2-metric">
@@ -138,7 +140,7 @@ export default function DashboardV2Page() {
           <BrandMark height={10} color="var(--muted)" />
           Megawatt Protocol — Tokenized Energy Infrastructure
         </span>
-        <span>Arbitrum Sepolia · ERC-4626 / ERC-7540 · Testnet Build</span>
+        <span>XRPL Mainnet · MPT receipt tokens · RLUSD settlement</span>
       </footer>
     </main>
   );

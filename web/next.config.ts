@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
   // Pin the workspace root to web/ (a stray lockfile in $HOME otherwise
   // confuses Turbopack's root inference).
   turbopack: { root: fileURLToPath(new URL(".", import.meta.url)) },
+  // xrpl.js (Spreadcast anchoring) pulls in ws; keep it server-side only.
+  serverExternalPackages: ["xrpl"],
   // File-watch events get dropped on this machine (fsevents and
   // WATCHPACK_POLLING both miss changes), so dev runs webpack with
   // explicit stat polling — see package.json "dev".

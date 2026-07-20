@@ -1,29 +1,9 @@
 import type { Position } from "./types";
 import { getVault } from "./vaults";
 
-/** The connected user's positions (receipt-token holdings). */
-export const POSITIONS: Position[] = [
-  {
-    vaultId: "bess-zagreb-01",
-    shares: 742000,
-    deposited: 742000,
-    claimable: 0,
-    claimed: 0,
-    sharePct: 100,
-    costBasis: 742000,
-    acquiredVia: "deposit",
-  },
-  {
-    vaultId: "bess-trieste-01",
-    shares: 88000,
-    deposited: 88000,
-    claimable: 0,
-    claimed: 0,
-    sharePct: (88000 / 588000) * 100,
-    costBasis: 88000,
-    acquiredVia: "marketplace",
-  },
-];
+/** The connected user's positions (MPT receipt-token holdings).
+ * Empty until vault tokenization opens on XRPL mainnet. */
+export const POSITIONS: Position[] = [];
 
 export interface PortfolioMetrics {
   totalDeposited: number;
@@ -71,8 +51,8 @@ export function growthSeries(): GrowthPoint[] {
     "Jan '26", "Feb '26", "Mar '26", "Apr '26", "May '26", "Jun '26",
     "Jul '26", "Aug '26", "Sep '26", "Oct '26", "Nov '26", "Dec '26",
   ];
-  // month index → deposit added that month
-  const deposits: Record<number, number> = { 0: 300000, 4: 2200000, 10: 88000 };
+  // month index → deposit added that month (none until XRPL fundraising opens)
+  const deposits: Record<number, number> = {};
   const monthlyRate = 0.12 / 12;
 
   let principal = 0;

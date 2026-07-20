@@ -111,11 +111,15 @@ export interface MarketListing {
 }
 
 export interface UserProfile {
-  address: string;
+  address: string; // XRPL r-address
   kycLevel: 0 | 1 | 2; // none / KYC verified / accredited
   kycIssuer?: string;
   kycIssuedAt?: string;
-  usdcBalance: number;
+  xrpBalance: number; // XRP (mainnet, live account_info read)
+  rlusdBalance: number; // RLUSD via trustline (0 when no trustline)
+  rlusdTrustline: boolean;
+  funded: boolean; // account exists on ledger (meets base reserve)
+  via: "xaman" | "watch"; // xaman = ownership proven by SignIn signature
 }
 
 /** Live snapshot produced by the BESS simulator (pure fn of vault + tick). */

@@ -1,29 +1,37 @@
 "use client";
 // ─────────────────────────────────────────────────────────────
-// Wallet + toast providers. Connects to the injected wallet
-// (MetaMask et al.), switches it to Arbitrum Sepolia, and keeps a
-// live MockUSDC balance on the profile. KYC level is presented as
-// verified — the on-chain CredentialOracle runs in open mode.
+// Wallet + toast providers — XRPL mainnet.
+// Connect opens the XRPL connect dialog. Primary flow: Xaman (XUMM)
+// sign-in — the server creates a SignIn payload, the user scans the
+// QR (or taps the deep link on mobile) and signs in the Xaman app,
+// proving ownership of the r-address. Falls back to a watch-only
+// address link while XUMM API keys are not configured. Either way
+// the app then does a LIVE mainnet lookup (XRP balance + RLUSD
+// trustline) through /api/xrpl/account.
+// KYC is presented as verified; production issues XRPL Credentials
+// (XLS-70).
 // ─────────────────────────────────────────────────────────────
 import { createContext, useContext, useState, useCallback, useRef, useEffect } from "react";
 import type { ReactNode } from "react";
 import type { UserProfile } from "./types";
-import { injected, ensureChain, readUsdcBalance, fromUsdc6, errMessage } from "./web3";
+import type { XrplAccountSnapshot } from "./xrpl";
 
 interface WalletState {
   connected: boolean;
   connecting: boolean;
   profile: UserProfile | null;
+  /** Opens the XRPL connect dialog (Xaman sign-in / watch-only fallback). */
   connect: () => void;
   disconnect: () => void;
-  /** Re-read on-chain balances for the connected account. */
+  /** Re-read live account state (XRP / RLUSD balances) from mainnet. */
   refresh: () => Promise<void>;
 }
 
 const WalletContext = createContext<WalletState | null>(null);
 
-/** Set when the user explicitly disconnects; blocks silent auto-reconnect. */
-const DISCONNECTED_KEY = "mw.walletDisconnected";
+/** Linked address + method, persisted for silent reconnect. */
+const ADDRESS_KEY = "mw.xrplAddress";
+const VIA_KEY = "mw.xrplVia";
 
 export interface Toast {
   id: number;
@@ -36,20 +44,32 @@ interface ToastState {
 }
 const ToastContext = createContext<ToastState | null>(null);
 
-function buildProfile(address: string, usdcBalance: number): UserProfile {
+function buildProfile(snap: XrplAccountSnapshot, via: UserProfile["via"]): UserProfile {
   return {
-    address,
+    address: snap.address,
     kycLevel: 2,
-    kycIssuer: "Megawatt Compliance · CredentialOracle",
+    kycIssuer: "Megawatt Compliance · XRPL Credentials (XLS-70)",
     kycIssuedAt: "2026-07-10",
-    usdcBalance,
+    xrpBalance: snap.xrpBalance,
+    rlusdBalance: snap.rlusdBalance,
+    rlusdTrustline: snap.rlusdTrustline,
+    funded: snap.funded,
+    via,
   };
+}
+
+async function fetchAccount(address: string): Promise<XrplAccountSnapshot> {
+  const res = await fetch(`/api/xrpl/account?address=${encodeURIComponent(address)}`, { cache: "no-store" });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? "Account lookup failed.");
+  return data as XrplAccountSnapshot;
 }
 
 export function AppProviders({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [showConnect, setShowConnect] = useState(false);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const idRef = useRef(1);
@@ -59,98 +79,270 @@ export function AppProviders({ children }: { children: ReactNode }) {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200);
   }, []);
 
-  const adopt = useCallback(async (address: string) => {
-    let balance = 0;
-    try {
-      balance = fromUsdc6(await readUsdcBalance(address));
-    } catch {
-      // RPC hiccup — profile still connects; balance refreshes later.
-    }
-    setProfile(buildProfile(address, balance));
+  const adopt = useCallback((snap: XrplAccountSnapshot, via: UserProfile["via"]) => {
+    setProfile(buildProfile(snap, via));
     setConnected(true);
+    localStorage.setItem(ADDRESS_KEY, snap.address);
+    localStorage.setItem(VIA_KEY, via);
   }, []);
 
-  const connect = useCallback(async () => {
-    const eth = injected();
-    if (!eth) {
-      notify("No wallet found — install MetaMask to connect");
-      return;
-    }
-    setConnecting(true);
-    try {
-      localStorage.removeItem(DISCONNECTED_KEY);
-      const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
-      if (!accounts?.length) throw new Error("No account authorized");
-      await ensureChain(eth);
-      await adopt(accounts[0]);
-    } catch (e) {
-      notify(errMessage(e));
-    } finally {
-      setConnecting(false);
-    }
-  }, [adopt, notify]);
+  const connect = useCallback(() => setShowConnect(true), []);
 
   const disconnect = useCallback(() => {
-    localStorage.setItem(DISCONNECTED_KEY, "1");
+    localStorage.removeItem(ADDRESS_KEY);
+    localStorage.removeItem(VIA_KEY);
     setConnected(false);
     setProfile(null);
-    // Ask the wallet to forget the site permission entirely so the next
-    // connect re-prompts; older wallets without revoke just fall back to
-    // the local flag above.
-    injected()
-      ?.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] })
-      .catch(() => {});
   }, []);
 
   const refresh = useCallback(async () => {
-    const address = profile?.address;
-    if (!address) return;
+    const current = profile;
+    if (!current) return;
     try {
-      const balance = fromUsdc6(await readUsdcBalance(address));
-      setProfile((p) => (p && p.address === address ? { ...p, usdcBalance: balance } : p));
+      const snap = await fetchAccount(current.address);
+      setProfile((p) => (p && p.address === current.address ? buildProfile(snap, current.via) : p));
     } catch {
-      // keep the stale balance on RPC failure
+      // keep the stale balances on lookup failure
     }
-  }, [profile?.address]);
+  }, [profile]);
 
-  // Silent reconnect for already-authorized accounts + wallet event wiring.
+  // Silent reconnect for a previously linked address.
   useEffect(() => {
-    const eth = injected();
-    if (!eth) return;
-
-    if (!localStorage.getItem(DISCONNECTED_KEY)) {
-      (eth.request({ method: "eth_accounts" }) as Promise<string[]>)
-        .then((accounts) => {
-          if (accounts?.length) void adopt(accounts[0]);
-        })
-        .catch(() => {});
-    }
-
-    const onAccounts = (...args: unknown[]) => {
-      if (localStorage.getItem(DISCONNECTED_KEY)) return;
-      const accounts = args[0] as string[];
-      if (accounts?.length) void adopt(accounts[0]);
-      else {
-        setConnected(false);
-        setProfile(null);
-      }
-    };
-    const onChain = () => window.location.reload();
-    eth.on?.("accountsChanged", onAccounts);
-    eth.on?.("chainChanged", onChain);
+    const stored = localStorage.getItem(ADDRESS_KEY);
+    if (!stored) return;
+    const via = (localStorage.getItem(VIA_KEY) === "xaman" ? "xaman" : "watch") as UserProfile["via"];
+    let alive = true;
+    fetchAccount(stored)
+      .then((snap) => {
+        if (alive) adopt(snap, via);
+      })
+      .catch(() => {
+        // Mainnet unreachable — reconnect silently with unknown balances.
+        if (alive)
+          adopt({ address: stored, funded: true, xrpBalance: 0, rlusdBalance: 0, rlusdTrustline: false }, via);
+      });
     return () => {
-      eth.removeListener?.("accountsChanged", onAccounts);
-      eth.removeListener?.("chainChanged", onChain);
+      alive = false;
     };
   }, [adopt]);
+
+  const finishConnect = useCallback(
+    async (address: string, via: UserProfile["via"]) => {
+      setConnecting(true);
+      try {
+        const snap = await fetchAccount(address);
+        adopt(snap, via);
+        setShowConnect(false);
+        notify(
+          via === "xaman"
+            ? "Signed in with Xaman — XRPL Mainnet"
+            : snap.funded
+              ? "Wallet linked (watch-only) — XRPL Mainnet"
+              : "Address linked — account not yet funded (1 XRP base reserve)",
+          "success"
+        );
+      } catch (e) {
+        notify(e instanceof Error ? e.message : "Connection failed.");
+      } finally {
+        setConnecting(false);
+      }
+    },
+    [adopt, notify]
+  );
 
   return (
     <WalletContext.Provider value={{ connected, connecting, profile, connect, disconnect, refresh }}>
       <ToastContext.Provider value={{ toasts, notify }}>
         {children}
+        {showConnect && (
+          <XrplConnectModal connecting={connecting} onClose={() => setShowConnect(false)} onFinish={finishConnect} />
+        )}
         <ToastViewport />
       </ToastContext.Provider>
     </WalletContext.Provider>
+  );
+}
+
+// ─── XRPL connect dialog (Xaman-first) ────────────────────────
+
+type XamanPhase =
+  | { step: "starting" }
+  | { step: "qr"; uuid: string; qrPng: string; deeplink: string; opened: boolean }
+  | { step: "manual"; reason: string | null }
+  | { step: "failed"; message: string };
+
+function XrplConnectModal({
+  connecting,
+  onClose,
+  onFinish,
+}: {
+  connecting: boolean;
+  onClose: () => void;
+  onFinish: (address: string, via: UserProfile["via"]) => void;
+}) {
+  const [phase, setPhase] = useState<XamanPhase>({ step: "starting" });
+  const [attempt, setAttempt] = useState(0);
+  const [address, setAddress] = useState("");
+  const validAddr = /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(address.trim());
+  const finishRef = useRef(onFinish);
+  finishRef.current = onFinish;
+
+  // Create the Xaman SignIn payload; fall back to watch-only when the
+  // deployment has no XUMM keys (501) or Xaman is unreachable.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/xrpl/xaman", { method: "POST" })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!alive) return;
+        if (res.ok) {
+          setPhase({ step: "qr", uuid: data.uuid, qrPng: data.qrPng, deeplink: data.deeplink, opened: false });
+        } else {
+          setPhase({ step: "manual", reason: res.status === 501 ? null : (data.error ?? null) });
+        }
+      })
+      .catch(() => {
+        if (alive) setPhase({ step: "manual", reason: "Xaman is unreachable right now." });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [attempt]);
+
+  // Poll the payload until signed / cancelled / expired.
+  const uuid = phase.step === "qr" ? phase.uuid : null;
+  useEffect(() => {
+    if (!uuid) return;
+    let alive = true;
+    const iv = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/xrpl/xaman?uuid=${uuid}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const s = await res.json();
+        if (!alive) return;
+        if (s.signed && s.account) {
+          clearInterval(iv);
+          finishRef.current(s.account, "xaman");
+        } else if (s.cancelled || s.expired) {
+          clearInterval(iv);
+          setPhase({ step: "failed", message: s.expired ? "Sign-in request expired." : "Sign-in was declined in Xaman." });
+        } else if (s.opened) {
+          setPhase((p) => (p.step === "qr" ? { ...p, opened: true } : p));
+        }
+      } catch {
+        // transient — keep polling
+      }
+    }, 2500);
+    return () => {
+      alive = false;
+      clearInterval(iv);
+    };
+  }, [uuid]);
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-title">Connect XRPL wallet</div>
+
+        {phase.step === "starting" && (
+          <p className="muted" style={{ fontSize: 13, margin: "16px 0" }}>Preparing Xaman sign-in…</p>
+        )}
+
+        {phase.step === "qr" && (
+          <>
+            <p className="muted" style={{ fontSize: 13, margin: "10px 0 16px", lineHeight: 1.55 }}>
+              Scan with the <b style={{ color: "var(--text)" }}>Xaman</b> app and approve the sign-in request —
+              this proves ownership of your account. Balances are then read live from XRPL mainnet.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+              {/* QR served by Xaman's cloud for this payload */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={phase.qrPng}
+                alt="Xaman sign-in QR"
+                width={200}
+                height={200}
+                style={{ background: "#fff", padding: 8 }}
+              />
+              <div className="muted" style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 7 }}>
+                <span className="dot pulse" style={{ background: "var(--accent)" }} />
+                {connecting ? "Reading ledger…" : phase.opened ? "Opened in Xaman — approve to continue" : "Waiting for scan…"}
+              </div>
+              <a className="btn btn-ghost btn-block" href={phase.deeplink} target="_blank" rel="noreferrer">
+                Open in Xaman app
+              </a>
+            </div>
+            <button
+              onClick={() => setPhase({ step: "manual", reason: null })}
+              style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 12, cursor: "pointer", padding: "12px 0 0", fontFamily: "inherit", textDecoration: "underline" }}
+            >
+              Use a watch-only address instead
+            </button>
+          </>
+        )}
+
+        {phase.step === "manual" && (
+          <>
+            <p className="muted" style={{ fontSize: 13, margin: "10px 0 16px", lineHeight: 1.55 }}>
+              Link your XRPL mainnet account. Balances are read live from the ledger; deposits will settle in
+              RLUSD once vault tokenization opens.
+            </p>
+            <div className="field">
+              <div className="field-label">
+                <span>XRPL address</span>
+                <span className="muted">Mainnet</span>
+              </div>
+              <input
+                className="input num"
+                placeholder="rYourXrplAddress…"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                disabled={connecting}
+                autoFocus
+              />
+            </div>
+            <p className="muted" style={{ fontSize: 11.5, margin: "2px 0 14px" }}>
+              {phase.reason ??
+                "Watch-only link (no signature). Xaman sign-in activates once XUMM API keys are configured on the server."}
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onClose} disabled={connecting}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-accent"
+                style={{ flex: 1 }}
+                disabled={!validAddr || connecting}
+                onClick={() => onFinish(address.trim(), "watch")}
+              >
+                {connecting ? "Reading ledger…" : "Connect"}
+              </button>
+            </div>
+          </>
+        )}
+
+        {phase.step === "failed" && (
+          <>
+            <p className="muted" style={{ fontSize: 13, margin: "16px 0" }}>{phase.message}</p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onClose}>
+                Close
+              </button>
+              <button
+                className="btn btn-accent"
+                style={{ flex: 1 }}
+                onClick={() => {
+                  setPhase({ step: "starting" });
+                  setAttempt((a) => a + 1);
+                }}
+              >
+                Try again
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 

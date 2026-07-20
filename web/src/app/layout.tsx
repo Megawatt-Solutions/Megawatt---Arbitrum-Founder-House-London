@@ -15,7 +15,7 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Megawatt — BESS Vaults",
   description:
-    "Invest in Battery Energy Storage Systems, earn yield, and trade your position — on Arbitrum.",
+    "Invest in Battery Energy Storage Systems, earn yield, and trade your position — on the XRP Ledger.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

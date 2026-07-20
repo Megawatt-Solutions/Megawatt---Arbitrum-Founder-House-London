@@ -7,13 +7,14 @@ import { fmtAddress } from "@/lib/format";
 import { WalletModal } from "./WalletModal";
 import { BrandMark } from "./BrandMark";
 import { ChainSelect } from "./ChainSelect";
-import { GridIcon, BriefcaseIcon, StoreIcon, WalletIcon, TrendingUpIcon } from "./Icons";
+import { GridIcon, BriefcaseIcon, StoreIcon, WalletIcon, TrendingUpIcon, BoltIcon } from "./Icons";
 
 const LINKS = [
   { href: "/dashboard-v2", label: "Overview", icon: TrendingUpIcon },
   { href: "/", label: "Vaults", icon: GridIcon },
   { href: "/portfolio", label: "Portfolio", icon: BriefcaseIcon },
   { href: "/marketplace", label: "Marketplace", icon: StoreIcon },
+  { href: "/spreadcast", label: "Spreadcast", icon: BoltIcon },
 ];
 
 export function TopNav() {

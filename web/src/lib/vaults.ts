@@ -1,13 +1,11 @@
 // ─────────────────────────────────────────────────────────────
-// Seed vault data. The two ACTIVE vaults mirror our real operational
+// Seed vault data. The two ACTIVE systems mirror our real operational
 // BESS sites (Ljubljana + Metlika, off-chain showcases with live
-// telemetry); Zagreb + Trieste are on-chain fundraising vaults
-// (deployed on Arbitrum Sepolia); the pipeline holds committed
-// future sites across Europe.
+// telemetry — not tied to any chain); the pipeline holds committed
+// future sites across Europe, to be tokenized on XRPL mainnet when
+// fundraising opens.
 // ─────────────────────────────────────────────────────────────
 import type { Vault } from "./types";
-
-export const DEPLOYER = "0x30cA4f7E57B8a4b057f5F358d6697e8b81541a76";
 
 export const VAULTS: Vault[] = [
   // ─── Active #1 — Ljubljana (real, operational, off-chain) ─────
@@ -86,88 +84,6 @@ export const VAULTS: Vault[] = [
     seed: 202,
   },
 
-  // ─── On-chain #1 — Zagreb 01 (fundraising) ────────────────────
-  {
-    id: "bess-zagreb-01",
-    kind: "onchain",
-    status: "fundraising",
-    name: "BESS Zagreb 01",
-    shortName: "Zagreb 01",
-    location: "Zagreb, Croatia",
-    country: "Croatia",
-    flag: "🇭🇷",
-    currency: "EUR",
-    symbol: "mwZAG01",
-    apyBps: 1250,
-    split: { depositorBps: 1250, protocolFeeBps: 450, sinkingFundBps: 550, reserveBps: 350 },
-    spec: { powerKw: 2500, energyKwh: 5000, chemistry: "LFP", hasSolar: false, units: 12 },
-    metrics: {
-      socPct: 0,
-      healthPct: 100,
-      roundTripEff: 0.93,
-      lifetimeCycles: 0,
-      chargedMwh: 0,
-      dischargedMwh: 0,
-      activations: 0,
-      grossYtd: 0,
-      netYtd: 0,
-    },
-    capex: 1800000,
-    raised: 742000,
-    totalShares: 742000,
-    sinkingFundBalance: 0,
-    annualRevenue: 459000,
-    addresses: {
-      // Live on Arbitrum Sepolia — shares ARE the receipt token (ERC-20 vault shares).
-      vault: "0x2DAf9D7BeE23e65344431850Ce28b54C63244faD",
-      receiptToken: "0x2DAf9D7BeE23e65344431850Ce28b54C63244faD",
-    },
-    description:
-      "Fundraising for a 2.5 MW / 5 MWh battery in Zagreb. Capital is drawn down to fund construction once the target is reached.",
-    seed: 505,
-  },
-
-  // ─── On-chain #2 — Trieste 01 (fundraising, nearly full) ──────
-  {
-    id: "bess-trieste-01",
-    kind: "onchain",
-    status: "fundraising",
-    name: "BESS Trieste 01",
-    shortName: "Trieste 01",
-    location: "Trieste, Italy",
-    country: "Italy",
-    flag: "🇮🇹",
-    currency: "EUR",
-    symbol: "mwTRS01",
-    apyBps: 1180,
-    split: { depositorBps: 1180, protocolFeeBps: 450, sinkingFundBps: 520, reserveBps: 350 },
-    spec: { powerKw: 1000, energyKwh: 2000, chemistry: "LFP", hasSolar: false, units: 8 },
-    metrics: {
-      socPct: 0,
-      healthPct: 100,
-      roundTripEff: 0.927,
-      lifetimeCycles: 0,
-      chargedMwh: 0,
-      dischargedMwh: 0,
-      activations: 0,
-      grossYtd: 0,
-      netYtd: 0,
-    },
-    capex: 700000,
-    raised: 588000,
-    totalShares: 588000,
-    sinkingFundBalance: 0,
-    annualRevenue: 178500,
-    addresses: {
-      // Live on Arbitrum Sepolia — shares ARE the receipt token (ERC-20 vault shares).
-      vault: "0xdb649C2086595CD798d7dEB9974634C9f3b5A44C",
-      receiptToken: "0xdb649C2086595CD798d7dEB9974634C9f3b5A44C",
-    },
-    description:
-      "Fundraising for a 1 MW / 2 MWh battery in Trieste, targeting intraday arbitrage on the Italian market.",
-    seed: 606,
-  },
-
   // ─── Pipeline #1 — Belgrade 01 ────────────────────────────────
   {
     id: "bess-belgrade-01",
@@ -199,11 +115,6 @@ export const VAULTS: Vault[] = [
     totalShares: 0,
     sinkingFundBalance: 0,
     annualRevenue: 832000,
-    addresses: {
-      // Live on Arbitrum Sepolia (Pipeline stage — deposits closed until opened).
-      vault: "0xb678D9fb980F787c307BAFa617cc8d0048b8a89F",
-      receiptToken: "0xb678D9fb980F787c307BAFa617cc8d0048b8a89F",
-    },
     description:
       "Pipeline — a 5 MW / 10 MWh battery in Belgrade. Opens for fundraising next quarter.",
     seed: 707,

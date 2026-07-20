@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { Vault } from "@/lib/types";
 import {
@@ -10,19 +10,13 @@ import { raiseProgress, grossYieldBps } from "@/lib/vaults";
 import { simulate, nextDistributionSec } from "@/lib/bess";
 import { POSITIONS } from "@/lib/portfolio";
 import { useWallet, useToast } from "@/lib/wallet";
-import { VAULT_CONTRACTS } from "@/lib/contracts";
-import {
-  readVaultState, depositToVault, faucetUsdc, claimVaultYield, fromUsdc6, errMessage,
-} from "@/lib/web3";
-import type { VaultChainState } from "@/lib/web3";
+import { explorerAccount } from "@/lib/xrpl";
 import { Donut } from "./Donut";
 import { SiteMonitor } from "./SiteMonitor";
 import {
   ArrowLeftIcon, ClockIcon, BoltIcon, SunIcon, CubeIcon, VerifiedIcon,
   ExternalLinkIcon, ShieldIcon, CheckIcon, XIcon, ChevronDownIcon,
 } from "./Icons";
-
-const EXPLORER = "https://sepolia.arbiscan.io";
 
 const STATUS_DOT: Record<Vault["status"], string> = {
   active: "var(--accent)",
@@ -32,7 +26,7 @@ const STATUS_DOT: Record<Vault["status"], string> = {
 };
 
 export function VaultDetail({ vault }: { vault: Vault }) {
-  const { profile, connected, connect, refresh } = useWallet();
+  const { profile, connected, connect } = useWallet();
   const { notify } = useToast();
   const [t, setT] = useState(0);
   const [showDeposit, setShowDeposit] = useState(false);
@@ -52,52 +46,21 @@ export function VaultDetail({ vault }: { vault: Vault }) {
   }, [hasTelemetry]);
   const snap = simulate(vault, t);
 
-  // Live chain state for vaults deployed on Arbitrum Sepolia; others stay mock.
-  const chainAddr = VAULT_CONTRACTS[vault.id];
-  const wired = !!chainAddr;
-  const [chain, setChain] = useState<VaultChainState | null>(null);
-  const refreshChain = useCallback(async () => {
-    if (!chainAddr) return;
-    try {
-      setChain(await readVaultState(chainAddr, profile?.address));
-    } catch {
-      // transient RPC failure — keep the last snapshot
-    }
-  }, [chainAddr, profile?.address]);
-  useEffect(() => {
-    refreshChain();
-    if (!chainAddr) return;
-    const iv = setInterval(refreshChain, 30000);
-    return () => clearInterval(iv);
-  }, [refreshChain, chainAddr]);
-
+  // Position + balances from mock data; goes live when vaults tokenize on XRPL.
   const position = POSITIONS.find((p) => p.vaultId === vault.id);
-  const claimable = wired ? (chain ? fromUsdc6(chain.pending) : 0) : position?.claimable ?? 0;
-  const deposited = wired ? (chain ? fromUsdc6(chain.shares) : 0) : position?.deposited ?? 0;
-  const liveRaised = wired && chain ? fromUsdc6(chain.raised) : vault.raised;
-  const liveTarget = wired && chain ? fromUsdc6(chain.target) : vault.capex;
-  const liveCurrency = wired ? "USD" : vault.currency;
-  const sharePct = wired
-    ? liveRaised > 0 ? (deposited / liveRaised) * 100 : 0
-    : position?.sharePct ?? 0;
-  const progress = wired ? (liveTarget > 0 ? liveRaised / liveTarget : 0) : raiseProgress(vault);
-  const usdcBalance = wired && chain && profile ? fromUsdc6(chain.usdc) : profile?.usdcBalance ?? 0;
+  const claimable = position?.claimable ?? 0;
+  const deposited = position?.deposited ?? 0;
+  const liveRaised = vault.raised;
+  const liveTarget = vault.capex;
+  const liveCurrency = vault.currency;
+  const sharePct = position?.sharePct ?? 0;
+  const progress = raiseProgress(vault);
+  const rlusdBalance = profile?.rlusdBalance ?? 0;
 
-  const onClaim = async () => {
+  const onClaim = () => {
     if (!connected) return connect();
     if (claimable <= 0) return;
-    if (!wired) {
-      notify(`Claimed ${fmtMoney(claimable, vault.currency)} yield`, "success");
-      return;
-    }
-    try {
-      await claimVaultYield(chainAddr!);
-      notify(`Claimed ${fmtMoney(claimable, "USD")} yield`, "success");
-      refreshChain();
-      refresh();
-    } catch (e) {
-      notify(errMessage(e));
-    }
+    notify(`Claimed ${fmtMoney(claimable, vault.currency)} yield`, "success");
   };
 
   return (
@@ -124,7 +87,7 @@ export function VaultDetail({ vault }: { vault: Vault }) {
               <span className="dot" style={{ background: "var(--blue)" }} /> Operated by Megawatt
             </span>
           ) : vault.addresses ? (
-            <a className="wallet-pill" href={`${EXPLORER}/address/${vault.addresses.vault}`} target="_blank" rel="noreferrer">
+            <a className="wallet-pill" href={explorerAccount(vault.addresses.vault)} target="_blank" rel="noreferrer">
               <span className="num">{fmtAddress(vault.addresses.vault)}</span>
               <ExternalLinkIcon size={13} />
             </a>
@@ -184,8 +147,8 @@ export function VaultDetail({ vault }: { vault: Vault }) {
               <ClaimCard
                 vault={vault}
                 claimable={claimable}
-                distributed={wired && chain ? fromUsdc6(chain.distributed) : vault.yieldDistributed ?? 0}
-                claimed={wired && chain ? fromUsdc6(chain.claimed) : vault.yieldClaimed ?? 0}
+                distributed={vault.yieldDistributed ?? 0}
+                claimed={vault.yieldClaimed ?? 0}
                 currency={liveCurrency}
                 onClaim={onClaim}
               />
@@ -229,8 +192,8 @@ export function VaultDetail({ vault }: { vault: Vault }) {
                 deposited={deposited}
                 sharePct={sharePct}
                 raised={liveRaised}
-                usdcBalance={usdcBalance}
-                showClaim={isActive || (wired && claimable > 0)}
+                rlusdBalance={rlusdBalance}
+                showClaim={isActive}
                 depositDisabled={isComing}
                 connected={connected}
                 onDeposit={() => (connected ? setShowDeposit(true) : connect())}
@@ -262,20 +225,13 @@ export function VaultDetail({ vault }: { vault: Vault }) {
       {showDeposit && (
         <DepositModal
           vault={vault}
-          wired={wired}
-          vaultAddr={chainAddr}
-          usdcBalance={usdcBalance}
+          rlusdBalance={rlusdBalance}
           remaining={Math.max(0, liveTarget - liveRaised)}
           kycOk={(profile?.kycLevel ?? 0) >= 1}
-          notify={notify}
           onClose={() => setShowDeposit(false)}
           onMockDone={(amt) => {
-            notify(`Deposited ${fmtMoney(amt, "USD")} — received ${fmtNum(amt)} ${vault.symbol}`, "success");
+            notify(`Deposited ${fmtMoney(amt, "USD")} RLUSD — received ${fmtNum(amt)} ${vault.symbol}`, "success");
             setShowDeposit(false);
-          }}
-          onTxDone={() => {
-            refreshChain();
-            refresh();
           }}
         />
       )}
@@ -470,7 +426,7 @@ function LatestMetricsCard({ vault, snap }: { vault: Vault; snap: ReturnType<typ
         <Row k="Energy Charged" v={`${fmtNum(snap.chargedMwh, 2)} MWh`} />
         <Row k="Energy Discharged" v={`${fmtNum(snap.dischargedMwh, 2)} MWh`} />
         <Row k="Activation Events" v={fmtNum(snap.activations)} />
-        <Row k="Data Source" v={vault.kind === "onchain" ? "Arbitrum Sepolia" : "On-site telemetry"} />
+        <Row k="Data Source" v={vault.kind === "onchain" ? "XRPL Mainnet" : "On-site telemetry"} />
       </div>
     </div>
   );
@@ -525,8 +481,8 @@ function SiteDetailsCard({ vault }: { vault: Vault }) {
         <Row k="Chemistry" v={vault.spec.chemistry} />
         <Row k="Projected annual revenue" v={fmtCompact(vault.annualRevenue, vault.currency)} />
         <Row k="Depositor APY" v={fmtPct(bpsToPct(vault.apyBps))} accent />
-        <Row k="Receipt token" v={vault.symbol} />
-        <Row k="Network" v="Arbitrum Sepolia · Testnet" />
+        <Row k="Receipt token" v={`${vault.symbol} · XRPL MPT`} />
+        <Row k="Network" v="XRPL · Mainnet" />
       </div>
     </div>
   );
@@ -560,10 +516,10 @@ function SiteOverviewCard({ vault }: { vault: Vault }) {
 // ─── Your position (onchain) ──────────────────────────────────
 function PositionCard(props: {
   vault: Vault; claimable: number; deposited: number; sharePct: number; raised: number;
-  usdcBalance: number; showClaim: boolean; depositDisabled?: boolean; connected: boolean;
+  rlusdBalance: number; showClaim: boolean; depositDisabled?: boolean; connected: boolean;
   onDeposit: () => void; onClaim: () => void;
 }) {
-  const { vault, claimable, deposited, sharePct, raised, usdcBalance, showClaim, depositDisabled, connected, onDeposit, onClaim } = props;
+  const { vault, claimable, deposited, sharePct, raised, rlusdBalance, showClaim, depositDisabled, connected, onDeposit, onClaim } = props;
   const others = Math.max(0, raised - deposited);
   const othersPct = Math.max(0, 100 - sharePct);
 
@@ -597,7 +553,7 @@ function PositionCard(props: {
       </div>
       <div className="divider" />
       <div className="rows">
-        <Row k="Your USDC" v={fmtMoney(usdcBalance, "USD")} />
+        <Row k="Your RLUSD" v={fmtMoney(rlusdBalance, "USD")} />
         <Row k="Your Deposit" v={fmtMoney(deposited, "USD")} />
         <Row k="Your Share" v={fmtPct(sharePct, 2)} />
         <Row k="Claimable Yield" v={fmtMoney(claimable, "USD")} accent />
@@ -629,59 +585,24 @@ function LegendItem({ color, name, value, pct }: { color: string; name: string; 
 }
 
 // ─── Deposit modal ────────────────────────────────────────────
-function DepositModal({ vault, wired, vaultAddr, usdcBalance, remaining, kycOk, notify, onClose, onMockDone, onTxDone }: {
+// Mock flow while vault tokenization is being built on XRPL: the real
+// version settles RLUSD via Xaman-signed payments and issues MPT shares.
+function DepositModal({ vault, rlusdBalance, remaining, kycOk, onClose, onMockDone }: {
   vault: Vault;
-  wired: boolean;
-  vaultAddr?: string;
-  usdcBalance: number;
+  rlusdBalance: number;
   remaining: number;
   kycOk: boolean;
-  notify: (message: string, type?: "default" | "success") => void;
   onClose: () => void;
   onMockDone: (amt: number) => void;
-  onTxDone: () => void;
 }) {
   const [amount, setAmount] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
   const amt = parseFloat(amount) || 0;
-  const tooMuch = amt > usdcBalance;
+  const tooMuch = amt > rlusdBalance;
   const overCap = amt > remaining;
-  const valid = amt > 0 && !tooMuch && !overCap && kycOk && !busy;
-  const maxAmt = Math.min(usdcBalance, remaining);
+  const valid = amt > 0 && !tooMuch && !overCap && kycOk;
+  const maxAmt = Math.min(rlusdBalance, remaining);
 
-  const submit = async () => {
-    if (!wired || !vaultAddr) {
-      onMockDone(amt);
-      return;
-    }
-    setBusy(true);
-    try {
-      await depositToVault(vaultAddr, amount, setStatus);
-      notify(`Deposited ${fmtMoney(amt, "USD")} — received ${fmtNum(amt)} ${vault.symbol}`, "success");
-      onTxDone();
-      onClose();
-    } catch (e) {
-      notify(errMessage(e));
-      setStatus(null);
-      setBusy(false);
-    }
-  };
-
-  const faucet = async () => {
-    setBusy(true);
-    try {
-      await faucetUsdc("10000", setStatus);
-      notify("Minted 10,000 test USDC", "success");
-      onTxDone();
-      setStatus(null);
-    } catch (e) {
-      notify(errMessage(e));
-      setStatus(null);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const submit = () => onMockDone(amt);
 
   return (
     <div className="overlay" onClick={onClose}>
@@ -694,30 +615,21 @@ function DepositModal({ vault, wired, vaultAddr, usdcBalance, remaining, kycOk, 
         <div className="field" style={{ marginTop: 18 }}>
           <div className="field-label">
             <span>Amount</span>
-            <span className="muted num">Balance: {fmtMoney(usdcBalance, "USD")}</span>
+            <span className="muted num">Balance: {fmtMoney(rlusdBalance, "USD")} RLUSD</span>
           </div>
           <div className="input-suffix">
-            <input className="input" inputMode="decimal" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ paddingRight: 92 }} disabled={busy} />
+            <input className="input" inputMode="decimal" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ paddingRight: 92 }} />
             <span className="suffix">
-              USDC{" "}
+              RLUSD{" "}
               <button onClick={() => setAmount(String(maxAmt))} style={{ background: "var(--accent-dim)", color: "var(--accent)", border: "none", padding: "3px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer", marginLeft: 4 }}>MAX</button>
             </span>
           </div>
-          {wired && (
-            <button
-              onClick={faucet}
-              disabled={busy}
-              style={{ background: "none", border: "none", color: "var(--accent)", fontSize: 12, cursor: "pointer", padding: "6px 0 0", fontFamily: "inherit" }}
-            >
-              + Get 10,000 test USDC (faucet)
-            </button>
-          )}
         </div>
 
         <div className="rows" style={{ marginBottom: 4 }}>
           <Row k="You receive" v={`${fmtNum(amt)} ${vault.symbol}`} />
           <Row k="Vault remaining" v={fmtMoney(remaining, "USD")} />
-          <Row k="Receipt token" v="ERC-4626 share · tradeable" />
+          <Row k="Receipt token" v="XRPL MPT share · tradeable" />
           <Row k="Projected APY" v={fmtPct(bpsToPct(vault.apyBps))} accent />
         </div>
 
@@ -726,16 +638,10 @@ function DepositModal({ vault, wired, vaultAddr, usdcBalance, remaining, kycOk, 
           {kycOk ? "KYC verified — eligible to deposit" : "KYC verification required to deposit"}
         </div>
 
-        {status && (
-          <div className="muted" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, margin: "8px 0 2px" }}>
-            <span className="dot pulse" style={{ background: "var(--accent)" }} /> {status}
-          </div>
-        )}
-
         <div className="modal-footer" style={{ display: "flex", gap: 10, marginTop: 16 }}>
-          <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onClose} disabled={busy}>Cancel</button>
+          <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onClose}>Cancel</button>
           <button className="btn btn-accent" style={{ flex: 1 }} disabled={!valid} onClick={submit}>
-            {busy ? "Working…" : tooMuch ? "Insufficient balance" : overCap ? "Exceeds vault capacity" : wired ? "Approve & deposit" : "Confirm deposit"}
+            {tooMuch ? "Insufficient RLUSD" : overCap ? "Exceeds vault capacity" : "Confirm deposit"}
           </button>
         </div>
       </div>
