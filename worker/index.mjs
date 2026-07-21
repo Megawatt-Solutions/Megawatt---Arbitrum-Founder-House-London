@@ -575,6 +575,7 @@ const rpcMethods = {
     }
     const out = rows.rows.map((r) => ({
       rank: 0,
+      playerId: r.player_id,
       name: r.name,
       verified: r.verified,
       wallet: r.wallet ? `${r.wallet.slice(0, 6)}…${r.wallet.slice(-4)}` : null,
@@ -584,9 +585,48 @@ const rpcMethods = {
       streak: streaks.get(r.player_id) ?? 0,
       absError: r.guesses > 0 ? Math.round(Number(r.abs_err) * 100) / 100 : null,
       isDemo: false,
+      pending: false,
+      signedPending: false,
     }));
-    out.sort((x, y) => y.points - x.points || (x.absError ?? Infinity) - (y.absError ?? Infinity) || y.correct - x.correct);
-    out.forEach((r, i) => (r.rank = i + 1));
+    // Players with a live (not-yet-settled) forecast appear immediately —
+    // the board should never look empty between close and settlement.
+    const pending = await q(
+      `select p.player_id, u.name, u.verified, u.wallet,
+              bool_or(p.tx_hash is not null and p.tx_hash not like 'SIMULATED-%') signed
+       from predictions p
+       join rounds r on r.delivery_day = p.delivery_day and r.status != 'settled'
+       join players u on u.id = p.player_id and not u.is_demo
+       where ($1 = 'season' or to_char(p.delivery_day, 'IYYY-"W"IW') = $2)
+         and (not $3 or u.verified)
+       group by 1, 2, 3, 4`,
+      [scope === "week" ? "week" : "season", week, !!verifiedOnly]
+    );
+    const byId = new Map(out.map((r) => [r.playerId, r]));
+    for (const p of pending.rows) {
+      const existing = byId.get(p.player_id);
+      if (existing) {
+        existing.pending = true;
+        existing.signedPending = p.signed;
+      } else {
+        out.push({
+          rank: 0, playerId: p.player_id, name: p.name, verified: p.verified,
+          wallet: p.wallet ? `${p.wallet.slice(0, 6)}…${p.wallet.slice(-4)}` : null,
+          points: 0, played: 0, correct: 0, streak: 0, absError: null,
+          isDemo: false, pending: true, signedPending: p.signed,
+        });
+      }
+    }
+    out.sort(
+      (x, y) =>
+        y.points - x.points ||
+        (x.absError ?? Infinity) - (y.absError ?? Infinity) ||
+        y.correct - x.correct ||
+        Number(y.signedPending) - Number(x.signedPending)
+    );
+    out.forEach((r, i) => {
+      r.rank = i + 1;
+      delete r.playerId;
+    });
     return { rows: out.slice(0, 100) };
   },
 

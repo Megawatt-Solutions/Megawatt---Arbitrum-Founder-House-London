@@ -13,6 +13,10 @@ interface Row {
   streak: number;
   absError: number | null;
   isDemo: boolean;
+  /** Has a live forecast awaiting the 15:00 settlement. */
+  pending?: boolean;
+  /** That pending forecast is committed on-chain (real tx). */
+  signedPending?: boolean;
 }
 
 export function LeaderboardView() {
@@ -75,7 +79,7 @@ export function LeaderboardView() {
             ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={8} className="muted">
-                  No settled forecasts yet — points land after each day&apos;s 15:00 settlement.
+                  No forecasts yet this period — lock in the first one on the Play tab.
                 </td>
               </tr>
             ) : (
@@ -83,12 +87,18 @@ export function LeaderboardView() {
                 <tr key={r.rank}>
                   <td className={r.rank === 1 ? "sc-rank-1" : "sc-mono"}>{r.rank}</td>
                   <td>
-                    {r.name} {r.verified && <span className="sc-tag v">V</span>}
+                    {r.name} {r.verified && <span className="sc-tag v">V</span>}{" "}
+                    {r.pending && (
+                      <span className="sc-tag" style={{ color: "var(--amber)", borderColor: "rgba(244,181,62,0.4)" }}>
+                        forecast in
+                      </span>
+                    )}{" "}
+                    {r.signedPending && <span className="sc-tag v">on-chain</span>}
                   </td>
                   <td className="sc-mono muted">{r.wallet ?? "—"}</td>
                   <td className="num" style={{ fontWeight: 700 }}>{r.points}</td>
-                  <td className="num">{r.played}</td>
-                  <td className="num">{r.played ? Math.round((r.correct / r.played) * 100) : 0}%</td>
+                  <td className="num">{r.played || "—"}</td>
+                  <td className="num">{r.played ? `${Math.round((r.correct / r.played) * 100)}%` : "—"}</td>
                   <td className="num">{r.streak > 0 ? <span className="sc-streak-flame">🔥{r.streak}</span> : "—"}</td>
                   <td className="num muted">{r.absError == null ? "—" : r.absError.toFixed(1)}</td>
                 </tr>
@@ -98,8 +108,9 @@ export function LeaderboardView() {
         </table>
       </div>
       <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
-        Verified = XRPL wallet connected. Prize-eligibility requires verified status; awards are promotional and
-        occasional, announced per cycle.
+        Verified = XRPL wallet connected. &ldquo;Forecast in&rdquo; = live forecast awaiting the 15:00 settlement;
+        &ldquo;on-chain&rdquo; = that forecast is committed on XRPL mainnet. Prize-eligibility requires verified
+        status; awards are promotional and occasional, announced per cycle.
       </p>
     </>
   );
