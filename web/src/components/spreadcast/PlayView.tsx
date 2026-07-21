@@ -52,7 +52,9 @@ export function PlayView() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ kind: "err" | "ok"; text: string } | null>(null);
   const [acctMsg, setAcctMsg] = useState<{ kind: "err" | "ok"; text: string } | null>(null);
-  const [commit, setCommit] = useState<{ hash: string; signed: boolean } | null>(null);
+  const [commit, setCommit] = useState<{ hash: string; signed: boolean; txHash?: string | null } | null>(null);
+  // Live Xaman signing of the daily commit (QR / deep link + polling).
+  const [signFlow, setSignFlow] = useState<{ uuid: string; qrPng: string; deeplink: string; opened: boolean } | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/spreadcast/round", { cache: "no-store" });
@@ -61,7 +63,10 @@ export function PlayView() {
     if (data.mine) {
       setSel(data.mine.band);
       setExact(data.mine.exact != null ? String(data.mine.exact) : "");
-      setCommit((c) => c ?? { hash: data.mine!.hash, signed: !!data.mine!.txHash });
+      // Simulated (demo-era) signatures don't count as signed — the real
+      // Xaman flow can replace them until close.
+      const realTx = data.mine!.txHash && !data.mine!.txHash.startsWith("SIMULATED-");
+      setCommit((c) => c ?? { hash: data.mine!.hash, signed: !!realTx, txHash: data.mine!.txHash });
     }
   }, []);
   useEffect(() => {
@@ -118,6 +123,52 @@ export function PlayView() {
     setMsg({ kind: "ok", text: "Forecast locked in. You can change it until close." });
     load();
   };
+
+  // Real Xaman signing: server wraps the 1-drop commit Payment (anchor
+  // destination, Make Waves SourceTag, hash memo) in a Xaman payload.
+  const startSign = async () => {
+    setBusy(true);
+    setMsg(null);
+    const res = await fetch("/api/spreadcast/commit-sign", { method: "POST" });
+    const data = await res.json();
+    setBusy(false);
+    if (res.status === 501) return simulateSign(); // no XUMM keys → demo path
+    if (!res.ok) return setMsg({ kind: "err", text: data.error });
+    setSignFlow({ uuid: data.uuid, qrPng: data.qrPng, deeplink: data.deeplink, opened: false });
+  };
+
+  const signUuid = signFlow?.uuid;
+  const signDay = isOpen ? (state!.open as { day: string }).day : null;
+  useEffect(() => {
+    if (!signUuid || !signDay) return;
+    let alive = true;
+    const iv = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/spreadcast/commit-sign?uuid=${signUuid}&day=${signDay}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const s = await res.json();
+        if (!alive) return;
+        if (s.signed && s.txHash) {
+          clearInterval(iv);
+          setSignFlow(null);
+          setCommit((c) => (c ? { ...c, signed: true, txHash: s.txHash } : c));
+          setMsg({ kind: "ok", text: "Commit signed — your forecast is now committed on XRPL mainnet." });
+        } else if (s.cancelled || s.expired) {
+          clearInterval(iv);
+          setSignFlow(null);
+          setMsg({ kind: "err", text: s.expired ? "Sign request expired — try again." : "Sign request declined in Xaman." });
+        } else if (s.opened) {
+          setSignFlow((f) => (f ? { ...f, opened: true } : f));
+        }
+      } catch {
+        // transient — keep polling
+      }
+    }, 2500);
+    return () => {
+      alive = false;
+      clearInterval(iv);
+    };
+  }, [signUuid, signDay]);
 
   // Demo-mode stand-in for the Xaman sign flow: reports a simulated tx hash.
   const simulateSign = async () => {
@@ -221,10 +272,44 @@ export function PlayView() {
                   {state.user.verified && (
                     <div style={{ marginTop: 8 }}>
                       {commit.signed ? (
-                        <span style={{ color: "var(--accent)" }}>✓ 1-drop commit signature recorded</span>
+                        <span style={{ color: "var(--accent)" }}>
+                          ✓ 1-drop commit signature recorded
+                          {commit.txHash && !commit.txHash.startsWith("SIMULATED-") && (
+                            <>
+                              {" · "}
+                              <a
+                                href={`https://livenet.xrpl.org/transactions/${commit.txHash}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ color: "var(--accent)", textDecoration: "underline" }}
+                              >
+                                view on ledger
+                              </a>
+                            </>
+                          )}
+                        </span>
+                      ) : signFlow ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={signFlow.qrPng} alt="Xaman commit QR" width={124} height={124} style={{ background: "#fff", padding: 5 }} />
+                          <div style={{ display: "grid", gap: 8, justifyItems: "start" }}>
+                            <span style={{ color: "var(--text-2)" }}>
+                              {signFlow.opened ? "Opened in Xaman — approve to commit" : "Scan with Xaman to sign your 1-drop commit"}
+                            </span>
+                            <a className="btn btn-ghost btn-sm" href={signFlow.deeplink} target="_blank" rel="noreferrer">
+                              Open in Xaman app
+                            </a>
+                            <button
+                              onClick={() => setSignFlow(null)}
+                              style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", padding: 0, fontFamily: "inherit", fontSize: 11, textDecoration: "underline" }}
+                            >
+                              cancel
+                            </button>
+                          </div>
+                        </div>
                       ) : (
-                        <button className="btn btn-ghost btn-sm" onClick={simulateSign} disabled={busy}>
-                          Sign daily commit (1 drop · simulated)
+                        <button className="btn btn-ghost btn-sm" onClick={startSign} disabled={busy}>
+                          Sign daily commit (1 drop · Xaman)
                         </button>
                       )}
                     </div>

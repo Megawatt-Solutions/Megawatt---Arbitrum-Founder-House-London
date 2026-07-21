@@ -5,6 +5,11 @@
 // RLUSD trustline) and the tokenization layer follows.
 // ─────────────────────────────────────────────────────────────
 
+/** Ripple Make Waves cohort attribution tag — MUST be set as SourceTag on
+ * every transaction the platform constructs (player commits, weekly anchors,
+ * prize payouts), so on-chain activity counts toward the program leaderboard. */
+export const MAKE_WAVES_SOURCE_TAG = 2606190003;
+
 export const XRPL_CHAIN = {
   network: "mainnet",
   name: "XRPL",

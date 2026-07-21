@@ -397,6 +397,7 @@ export function leaderboard(scope: "week" | "season", verifiedOnly: boolean): Le
   for (const [userId, a] of acc) {
     const u = d.users.find((x) => x.id === userId);
     if (!u) continue;
+    if (u.demo) continue; // seeded demo players never rank — real forecasts only
     if (verifiedOnly && !u.verified) continue;
     const live = lastSettled ? (d.predictions[lastSettled]?.[userId]?.streak ?? 0) : 0;
     rows.push({

@@ -1,0 +1,456 @@
+// ─────────────────────────────────────────────────────────────
+// Spreadcast worker — the always-on backend for the forecasting game.
+//   • market clock (Europe/Ljubljana): open 15:00 D-2, close 11:45 D-1,
+//     results poll ~13:00, settle 15:00, Monday band recalibration,
+//     Sunday weekly Merkle anchor
+//   • price source: ENTSO-E A44 (SI zone) when ENTSOE_TOKEN is set,
+//     deterministic simulator fallback (rows are tagged by source)
+//   • XRPL mainnet listener: subscribes to the anchor account and mirrors
+//     every observed tx into chain_txs; matches spreadcast/commit memos to
+//     predictions (the ledger — not the client — proves commits)
+//   • health endpoint on 127.0.0.1:8787
+// Logic mirrors web/src/lib/spreadcast/* — keep the two in sync.
+// ─────────────────────────────────────────────────────────────
+import { createHash } from "node:crypto";
+import http from "node:http";
+import cron from "node-cron";
+import pg from "pg";
+
+const TZ = "Europe/Ljubljana";
+const XRPL_WSS = process.env.XRPL_WSS || "wss://xrplcluster.com";
+const ANCHOR_ADDRESS = process.env.XRPL_ANCHOR_ADDRESS || "";
+const ANCHOR_SEED = process.env.XRPL_ANCHOR_SEED || "";
+// Xaman-style secret numbers (8 groups of 6 digits, space-separated) as an
+// alternative to a family seed — whichever is set on the server wins.
+const ANCHOR_SECRET_NUMBERS = (process.env.XRPL_ANCHOR_SECRET_NUMBERS || "").trim();
+
+async function anchorWallet() {
+  const { Wallet } = await import("xrpl");
+  if (ANCHOR_SEED) return Wallet.fromSeed(ANCHOR_SEED);
+  if (ANCHOR_SECRET_NUMBERS) return Wallet.fromSecretNumbers(ANCHOR_SECRET_NUMBERS.split(/[\s,]+/));
+  return null;
+}
+const ENTSOE_TOKEN = process.env.ENTSOE_TOKEN || "";
+const SI_EIC = "10YSI-ELES-----O";
+// Ripple Make Waves attribution — SourceTag on every platform-built tx.
+const MAKE_WAVES_SOURCE_TAG = 2606190003;
+
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 4 });
+const q = (text, params) => pool.query(text, params);
+
+const log = (...a) => console.log(new Date().toISOString(), ...a);
+
+async function jobRun(job, fn) {
+  try {
+    const detail = (await fn()) ?? "";
+    await q("insert into job_runs (job, ok, detail) values ($1, true, $2)", [job, String(detail).slice(0, 500)]);
+    log(`job ${job}: ok`, detail);
+  } catch (e) {
+    await q("insert into job_runs (job, ok, detail) values ($1, false, $2)", [job, String(e?.message ?? e).slice(0, 500)]).catch(() => {});
+    log(`job ${job}: FAILED`, e);
+  }
+}
+
+// ─── market clock (port of web/src/lib/spreadcast/time.ts) ────
+const dtf = new Intl.DateTimeFormat("en-CA", {
+  timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", hour12: false,
+});
+function localTime(date = new Date()) {
+  const p = {};
+  for (const part of dtf.formatToParts(date)) p[part.type] = part.value;
+  const hh = Number(p.hour === "24" ? "0" : p.hour);
+  return { day: `${p.year}-${p.month}-${p.day}`, hh, mm: Number(p.minute), minutes: hh * 60 + Number(p.minute) };
+}
+function addDays(day, n) {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+const CLOSE_MIN = 11 * 60 + 45, OPEN_MIN = 15 * 60;
+function localMomentUtc(day, minutes) {
+  const [y, m, d] = day.split("-").map(Number);
+  let guess = Date.UTC(y, m - 1, d, Math.floor(minutes / 60), minutes % 60);
+  for (let i = 0; i < 2; i++) {
+    const lt = localTime(new Date(guess));
+    const got = lt.minutes + (lt.day === day ? 0 : lt.day > day ? 1440 : -1440);
+    guess -= (got - minutes) * 60000;
+  }
+  return new Date(guess);
+}
+function isMonday(day) {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay() === 1;
+}
+function isoWeek(day) {
+  const [y, m, d] = day.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return `${date.getUTCFullYear()}-W${String(Math.ceil(((date - yearStart) / 86400000 + 1) / 7)).padStart(2, "0")}`;
+}
+
+// ─── bands & scoring (port of bands.ts / scoring.ts) ──────────
+function bandOf(spread, b) {
+  for (let i = 0; i < b.length; i++) if (spread < b[i]) return i;
+  return b.length;
+}
+function quintileBoundaries(spreads) {
+  if (spreads.length < 30) return null;
+  const s = spreads.slice().sort((a, b) => a - b);
+  const quant = (p) => {
+    const idx = p * (s.length - 1), lo = Math.floor(idx), hi = Math.ceil(idx);
+    return Math.round(s[lo] + (s[hi] - s[lo]) * (idx - lo));
+  };
+  const b = [quant(0.2), quant(0.4), quant(0.6), quant(0.8)];
+  for (let i = 1; i < b.length; i++) if (b[i] <= b[i - 1]) b[i] = b[i - 1] + 1;
+  return b;
+}
+const multiplierFor = (streak) => (streak <= 1 ? 1 : Math.min(1 + 0.5 * (streak - 1), 3));
+const pointsFor = (streak) => Math.round(10 * multiplierFor(streak));
+
+// ─── prices (port of prices.ts) ───────────────────────────────
+function toHourlyMeans(values) {
+  if (values.length === 24) return values.slice();
+  const per = values.length / 24, out = [];
+  for (let h = 0; h < 24; h++) {
+    const seg = values.slice(Math.round(h * per), Math.max(Math.round((h + 1) * per), Math.round(h * per) + 1));
+    out.push(seg.reduce((a, b) => a + b, 0) / seg.length);
+  }
+  return out;
+}
+function mulberry32(seed) {
+  let a = seed;
+  return () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function simulateDay(day) {
+  let h = 2166136261;
+  for (const c of day) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); }
+  const rnd = mulberry32(h >>> 0);
+  const [y, m, d] = day.split("-").map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  const weekend = dow === 0 || dow === 6;
+  const winter = Math.cos(((m - 0.5) / 12) * 2 * Math.PI);
+  const base = 78 + winter * 18 + (rnd() - 0.5) * 30 - (weekend ? 14 : 0);
+  const sunny = Math.max(0, Math.min(1, 0.35 - winter * 0.3 + (rnd() - 0.35) * 0.9));
+  const tight = rnd() < 0.12, vol = 6 + rnd() * 10;
+  const values = [];
+  for (let qtr = 0; qtr < 96; qtr++) {
+    const hr = qtr / 4;
+    let p = base;
+    p += 24 * Math.exp(-((hr - 8.2) ** 2) / 4);
+    p += (tight ? 95 : 34) * Math.exp(-((hr - 19.6) ** 2) / 3.2);
+    p -= 26 * Math.exp(-((hr - 3.5) ** 2) / 9);
+    p -= sunny * (weekend ? 105 : 82) * Math.exp(-((hr - 12.8) ** 2) / 7);
+    p += (rnd() - 0.5) * vol;
+    values.push(Math.round(p * 100) / 100);
+  }
+  return { source: "simulated", resolution: "PT15M", values, hourly: toHourlyMeans(values) };
+}
+async function fetchEntsoeDay(day) {
+  if (!ENTSOE_TOKEN) return null;
+  const compact = day.replaceAll("-", "");
+  const url = `https://web-api.tp.entsoe.eu/api?securityToken=${ENTSOE_TOKEN}` +
+    `&documentType=A44&in_Domain=${SI_EIC}&out_Domain=${SI_EIC}` +
+    `&periodStart=${compact}0000&periodEnd=${compact}2300`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+  if (!res.ok) return null;
+  const xml = await res.text();
+  if (xml.includes("<Acknowledgement_MarketDocument")) return null;
+  const series = [];
+  const periodRe = /<Period>([\s\S]*?)<\/Period>/g;
+  let pm;
+  while ((pm = periodRe.exec(xml))) {
+    const block = pm[1];
+    const resolution = /<resolution>(.*?)<\/resolution>/.exec(block)?.[1] ?? "PT60M";
+    const points = new Map();
+    const pointRe = /<Point>[\s\S]*?<position>(\d+)<\/position>[\s\S]*?<price\.amount>(-?[\d.]+)<\/price\.amount>[\s\S]*?<\/Point>/g;
+    let m;
+    while ((m = pointRe.exec(block))) points.set(Number(m[1]), Number(m[2]));
+    series.push({ resolution, points });
+  }
+  if (!series.length) return null;
+  const best = series.reduce((a, b) => (b.points.size > a.points.size ? b : a));
+  const quarter = best.resolution === "PT15M";
+  const slots = quarter ? 96 : 24;
+  const values = [];
+  let last = 0;
+  for (let i = 1; i <= slots; i++) {
+    if (best.points.has(i)) last = best.points.get(i);
+    values.push(last);
+  }
+  return { source: "entsoe", resolution: quarter ? "PT15M" : "PT60M", values, hourly: toHourlyMeans(values) };
+}
+
+// ─── merkle (port of merkle.ts) ───────────────────────────────
+const sha256 = (s) => createHash("sha256").update(s).digest("hex");
+function merkleRoot(leaves) {
+  if (!leaves.length) return sha256("empty");
+  let level = leaves.map((l) => l.toLowerCase()).sort();
+  while (level.length > 1) {
+    const next = [];
+    for (let i = 0; i < level.length; i += 2) next.push(sha256(level[i] + (level[i + 1] ?? level[i])));
+    level = next;
+  }
+  return level[0];
+}
+
+// ─── round lifecycle ──────────────────────────────────────────
+async function currentBoundaries() {
+  const r = await q("select value from meta where key = 'boundaries'");
+  return r.rows[0].value.map(Number);
+}
+
+async function recalibrateIfDue(openDay) {
+  if (!isMonday(openDay)) return "not monday";
+  const last = await q("select value from meta where key = 'lastRecalc'");
+  if (last.rows[0]?.value === openDay) return "already done";
+  const r = await q(
+    `select spread from rounds where status = 'settled' and delivery_day < $1 and delivery_day >= $2
+     order by delivery_day desc limit 60`,
+    [openDay, addDays(openDay, -60)]
+  );
+  const b = quintileBoundaries(r.rows.map((x) => Number(x.spread)));
+  if (!b) return `history ${r.rows.length} < 30, keeping boundaries`;
+  await q("insert into meta (key, value) values ('boundaries', $1::jsonb) on conflict (key) do update set value = $1::jsonb", [JSON.stringify(b)]);
+  await q("insert into meta (key, value) values ('lastRecalc', $1::jsonb) on conflict (key) do update set value = $1::jsonb", [JSON.stringify(openDay)]);
+  return `recalibrated to ${b.join("/")}`;
+}
+
+/** Make sure the round currently open for predictions exists. */
+async function ensureOpenRound() {
+  const now = localTime();
+  const openDay = now.minutes < CLOSE_MIN ? addDays(now.day, 1) : addDays(now.day, 2);
+  const exists = await q("select 1 from rounds where delivery_day = $1", [openDay]);
+  if (exists.rowCount) return `round ${openDay} exists`;
+  await recalibrateIfDue(openDay);
+  const b = await currentBoundaries();
+  await q(
+    "insert into rounds (delivery_day, opens_at, closes_at, boundaries, status) values ($1, $2, $3, $4, 'open')",
+    [openDay, localMomentUtc(addDays(openDay, -2), OPEN_MIN), localMomentUtc(addDays(openDay, -1), CLOSE_MIN), b]
+  );
+  return `opened ${openDay} bands ${b.join("/")}`;
+}
+
+async function closeDueRounds() {
+  const r = await q("update rounds set status = 'closed' where status = 'open' and closes_at <= now() returning delivery_day");
+  return `closed ${r.rows.map((x) => x.delivery_day.toISOString?.().slice(0, 10) ?? x.delivery_day).join(", ") || "nothing"}`;
+}
+
+/** Store published prices for a delivery day (no settlement yet). */
+async function pollPrices() {
+  const now = localTime();
+  const day = addDays(now.day, 1); // auction today is for tomorrow's delivery
+  const round = await q("select status, source from rounds where delivery_day = $1", [day]);
+  if (!round.rowCount) return `no round for ${day}`;
+  if (round.rows[0].source === "entsoe") return `already have entsoe prices for ${day}`;
+  const prices = await fetchEntsoeDay(day);
+  if (!prices) return `entsoe not available for ${day} (token ${ENTSOE_TOKEN ? "set" : "missing"})`;
+  await q("update rounds set source = $2, resolution = $3, raw_values = $4, hourly = $5 where delivery_day = $1",
+    [day, prices.source, prices.resolution, prices.values, prices.hourly.map((v) => Math.round(v * 100) / 100)]);
+  return `stored entsoe prices for ${day}`;
+}
+
+/** Streak carried into `day` for a player (consecutive correct preceding days). */
+async function previousStreak(playerId, day) {
+  let streak = 0, cursor = addDays(day, -1);
+  for (;;) {
+    const r = await q("select correct from predictions where delivery_day = $1 and player_id = $2", [cursor, playerId]);
+    if (!r.rowCount || !r.rows[0].correct) return streak;
+    streak++;
+    cursor = addDays(cursor, -1);
+  }
+}
+
+async function settleDueRounds() {
+  const due = await q(
+    `select delivery_day, boundaries, source, hourly from rounds
+     where status != 'settled' and closes_at <= now() - interval '3 hours' order by delivery_day`
+  );
+  if (!due.rowCount) return "nothing due";
+  const done = [];
+  for (const row of due.rows) {
+    const day = row.delivery_day.toISOString().slice(0, 10);
+    let prices = row.source === "entsoe"
+      ? { source: "entsoe", hourly: row.hourly.map(Number) }
+      : (await fetchEntsoeDay(day).catch(() => null)) ?? simulateDay(day);
+    const hourly = prices.hourly.map((v) => Math.round(v * 100) / 100);
+    const spread = Math.round((Math.max(...hourly) - Math.min(...hourly)) * 100) / 100;
+    const outcome = bandOf(spread, row.boundaries.map(Number));
+    await q(
+      `update rounds set status = 'settled', settled_at = now(), source = coalesce(source, $2),
+       resolution = coalesce(resolution, $3), raw_values = coalesce(raw_values, $4),
+       hourly = $5, spread = $6, outcome_band = $7 where delivery_day = $1`,
+      [day, prices.source, prices.resolution ?? null, prices.values ?? null, hourly, spread, outcome]
+    );
+    const preds = await q("select player_id, band, exact_guess from predictions where delivery_day = $1", [day]);
+    for (const p of preds.rows) {
+      const correct = p.band === outcome;
+      const streak = correct ? (await previousStreak(p.player_id, day)) + 1 : 0;
+      await q(
+        `update predictions set correct = $3, streak = $4, multiplier = $5, points = $6, abs_error = $7
+         where delivery_day = $1 and player_id = $2`,
+        [day, p.player_id, correct, streak, correct ? multiplierFor(streak) : 0, correct ? pointsFor(streak) : 0,
+         p.exact_guess == null ? null : Math.round(Math.abs(Number(p.exact_guess) - spread) * 100) / 100]
+      );
+    }
+    done.push(`${day}→band${outcome} (${spread}, ${prices.source}, ${preds.rowCount} preds)`);
+  }
+  await ensureOpenRound();
+  return done.join("; ");
+}
+
+// ─── weekly anchor ────────────────────────────────────────────
+async function weeklyAnchor() {
+  const lastWeek = isoWeek(addDays(localTime().day, -7));
+  const existing = await q("select 1 from anchors where week = $1", [lastWeek]);
+  if (existing.rowCount) return `anchor ${lastWeek} exists`;
+  const hashes = await q(
+    `select p.commit_hash from predictions p join rounds r on r.delivery_day = p.delivery_day
+     where r.status = 'settled' and to_char(p.delivery_day, 'IYYY-"W"IW') = $1`,
+    [lastWeek]
+  );
+  if (!hashes.rowCount) return `no settled predictions in ${lastWeek}`;
+  const root = merkleRoot(hashes.rows.map((r) => r.commit_hash));
+  let txHash = `SIMULATED-${root.slice(0, 16).toUpperCase()}`;
+  let simulated = true;
+  const wallet = await anchorWallet();
+  if (wallet) {
+    const { Client } = await import("xrpl");
+    const client = new Client(XRPL_WSS);
+    await client.connect();
+    try {
+      const hex = (s) => Buffer.from(s, "utf8").toString("hex").toUpperCase();
+      const res = await client.submitAndWait({
+        TransactionType: "Payment", Account: wallet.address, Destination: wallet.address, Amount: "1",
+        SourceTag: MAKE_WAVES_SOURCE_TAG,
+        Memos: [{ Memo: { MemoType: hex("spreadcast/anchor"), MemoFormat: hex("text/plain"), MemoData: hex(`${lastWeek}:${root}`) } }],
+      }, { autofill: true, wallet });
+      txHash = res.result.hash;
+      simulated = false;
+    } finally {
+      await client.disconnect();
+    }
+  }
+  await q("insert into anchors (week, merkle_root, leaves, tx_hash, simulated) values ($1, $2, $3, $4, $5)",
+    [lastWeek, root, hashes.rowCount, txHash, simulated]);
+  return `anchored ${lastWeek} root ${root.slice(0, 12)}… (${simulated ? "simulated" : txHash})`;
+}
+
+// ─── XRPL anchor-account listener ─────────────────────────────
+const hexToUtf8 = (h) => { try { return Buffer.from(h, "hex").toString("utf8"); } catch { return null; } };
+
+async function recordChainTx(tx, ledgerIndex) {
+  const memo = tx.Memos?.[0]?.Memo;
+  const memoType = memo?.MemoType ? hexToUtf8(memo.MemoType) : null;
+  const memoData = memo?.MemoData ? hexToUtf8(memo.MemoData) : null;
+  let deliveryDay = null;
+  if (memoType === "spreadcast/commit" && memoData?.match(/^\d{4}-\d{2}-\d{2}:/)) deliveryDay = memoData.slice(0, 10);
+  await q(
+    `insert into chain_txs (tx_hash, account, tx_type, memo_type, memo_data, delivery_day, ledger_index)
+     values ($1, $2, $3, $4, $5, $6, $7) on conflict (tx_hash) do nothing`,
+    [tx.hash, tx.Account, tx.TransactionType, memoType, memoData, deliveryDay, ledgerIndex ?? null]
+  );
+  // Match the commit memo to a pending prediction: ledger proves the commit.
+  if (memoType === "spreadcast/commit" && memoData && deliveryDay) {
+    const hash = memoData.slice(11);
+    await q("update predictions set tx_hash = $1 where commit_hash = $2 and tx_hash is null", [tx.hash, hash]);
+  }
+}
+
+async function startXrplListener() {
+  if (!ANCHOR_ADDRESS) {
+    log("xrpl listener: no XRPL_ANCHOR_ADDRESS configured — idle until set");
+    return;
+  }
+  const { Client } = await import("xrpl");
+  let backoff = 5;
+  for (;;) {
+    const client = new Client(XRPL_WSS);
+    try {
+      await client.connect();
+      backoff = 5;
+      log(`xrpl listener: subscribed to ${ANCHOR_ADDRESS} via ${XRPL_WSS}`);
+      client.on("transaction", async (ev) => {
+        const tx = ev.tx_json ?? ev.transaction;
+        if (tx?.hash || ev.hash) {
+          try { await recordChainTx({ ...tx, hash: tx.hash ?? ev.hash }, ev.ledger_index); }
+          catch (e) { log("chain_tx record failed", e.message); }
+        }
+      });
+      await client.request({ command: "subscribe", accounts: [ANCHOR_ADDRESS] });
+      await new Promise((resolve) => client.once("disconnected", resolve));
+      log("xrpl listener: disconnected, reconnecting");
+    } catch (e) {
+      log(`xrpl listener error: ${e.message}; retry in ${backoff}s`);
+    }
+    try { await client.disconnect(); } catch {}
+    await new Promise((r) => setTimeout(r, backoff * 1000));
+    backoff = Math.min(backoff * 2, 120);
+  }
+}
+
+/** Backfill safety net: pull recent account_tx in case the stream dropped. */
+async function backfillChainTxs() {
+  if (!ANCHOR_ADDRESS) return "no anchor address";
+  const { Client } = await import("xrpl");
+  const client = new Client(XRPL_WSS);
+  await client.connect();
+  try {
+    const res = await client.request({ command: "account_tx", account: ANCHOR_ADDRESS, limit: 200 });
+    let n = 0;
+    for (const item of res.result.transactions ?? []) {
+      const tx = item.tx_json ?? item.tx;
+      const hash = tx?.hash ?? item.hash;
+      if (hash) { await recordChainTx({ ...tx, hash }, item.ledger_index ?? tx?.ledger_index); n++; }
+    }
+    return `scanned ${n} txs`;
+  } finally {
+    await client.disconnect();
+  }
+}
+
+// ─── health endpoint ──────────────────────────────────────────
+http.createServer(async (_req, res) => {
+  try {
+    const jobs = await q("select job, ok, detail, ran_at from job_runs order by id desc limit 12");
+    const counts = await q(`select
+      (select count(*) from rounds) rounds,
+      (select count(*) from rounds where status = 'settled') settled,
+      (select count(*) from players) players,
+      (select count(*) from predictions) predictions,
+      (select count(*) from chain_txs) chain_txs`);
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true, tz: TZ, now: localTime(), counts: counts.rows[0], recentJobs: jobs.rows }, null, 2));
+  } catch (e) {
+    res.writeHead(500, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: false, error: e.message }));
+  }
+}).listen(8787, "127.0.0.1", () => log("health endpoint on 127.0.0.1:8787"));
+
+// ─── schedule (all Europe/Ljubljana) ──────────────────────────
+const sched = (expr, name, fn) => cron.schedule(expr, () => jobRun(name, fn), { timezone: TZ });
+
+sched("45 11 * * *", "close", closeDueRounds);
+sched("5,20,40 13 * * *", "poll-prices", pollPrices);
+sched("10,40 14 * * *", "poll-prices-retry", pollPrices);
+sched("0 15 * * *", "settle", settleDueRounds);
+sched("15,30 15 * * *", "settle-retry", settleDueRounds);
+sched("5 15 * * *", "ensure-round", ensureOpenRound);
+sched("10 15 * * 0", "weekly-anchor", weeklyAnchor);
+sched("*/30 * * * *", "chain-backfill", backfillChainTxs);
+sched("0 * * * *", "heartbeat", async () => "alive");
+
+// ─── boot ─────────────────────────────────────────────────────
+(async () => {
+  await jobRun("boot-ensure-round", ensureOpenRound);
+  await jobRun("boot-close", closeDueRounds);
+  await jobRun("boot-settle", settleDueRounds);
+  startXrplListener();
+  log("spreadcast worker up");
+})();

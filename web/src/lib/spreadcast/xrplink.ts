@@ -8,6 +8,7 @@
 // are constructed but not submitted, and are labeled simulated.
 
 import { localMomentUtc, OPEN_MIN } from "./time";
+import { MAKE_WAVES_SOURCE_TAG } from "../xrpl";
 
 export const XRPL_WSS = process.env.XRPL_WSS || "wss://xrplcluster.com";
 export const ANCHOR_ADDRESS = process.env.XRPL_ANCHOR_ADDRESS || "";
@@ -23,6 +24,7 @@ export function buildCommitTx(playerAddress: string, day: string, hash: string) 
     Account: playerAddress,
     Destination: ANCHOR_ADDRESS || "rSPREADCASTanchorDEMOxxxxxxxxxxxxx",
     Amount: "1", // 1 drop
+    SourceTag: MAKE_WAVES_SOURCE_TAG,
     Memos: [
       {
         Memo: {
@@ -58,6 +60,7 @@ export async function submitWeeklyAnchor(week: string, root: string): Promise<An
       Account: wallet.address,
       Destination: wallet.address, // self-payment carrier for the memo
       Amount: "1",
+      SourceTag: MAKE_WAVES_SOURCE_TAG,
       Memos: [
         {
           Memo: {

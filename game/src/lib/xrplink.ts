@@ -12,6 +12,9 @@ import { localMomentUtc, OPEN_MIN } from "./time";
 export const XRPL_WSS = process.env.XRPL_WSS || "wss://xrplcluster.com";
 export const ANCHOR_ADDRESS = process.env.XRPL_ANCHOR_ADDRESS || "";
 
+// Ripple Make Waves attribution — SourceTag on every platform-built tx.
+export const MAKE_WAVES_SOURCE_TAG = 2606190003;
+
 const hex = (s: string) => Buffer.from(s, "utf8").toString("hex").toUpperCase();
 
 /** The 1-drop Payment a verified player signs in Xaman each day. Carries the
@@ -23,6 +26,7 @@ export function buildCommitTx(playerAddress: string, day: string, hash: string) 
     Account: playerAddress,
     Destination: ANCHOR_ADDRESS || "rSPREADCASTanchorDEMOxxxxxxxxxxxxx",
     Amount: "1", // 1 drop
+    SourceTag: MAKE_WAVES_SOURCE_TAG,
     Memos: [
       {
         Memo: {
@@ -58,6 +62,7 @@ export async function submitWeeklyAnchor(week: string, root: string): Promise<An
       Account: wallet.address,
       Destination: wallet.address, // self-payment carrier for the memo
       Amount: "1",
+      SourceTag: MAKE_WAVES_SOURCE_TAG,
       Memos: [
         {
           Memo: {

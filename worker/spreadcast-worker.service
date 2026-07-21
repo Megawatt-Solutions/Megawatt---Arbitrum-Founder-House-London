@@ -1,0 +1,22 @@
+[Unit]
+Description=Spreadcast worker (market clock, settlement, XRPL anchor listener)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+User=spreadcast
+Group=spreadcast
+WorkingDirectory=/opt/spreadcast/worker
+EnvironmentFile=/etc/spreadcast/worker.env
+ExecStart=/usr/bin/node /opt/spreadcast/worker/index.mjs
+Restart=always
+RestartSec=5
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=
+
+[Install]
+WantedBy=multi-user.target

@@ -75,7 +75,7 @@ export function LeaderboardView() {
             ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={8} className="muted">
-                  Nothing here yet this period.
+                  No settled forecasts yet — points land after each day&apos;s 15:00 settlement.
                 </td>
               </tr>
             ) : (
@@ -83,8 +83,7 @@ export function LeaderboardView() {
                 <tr key={r.rank}>
                   <td className={r.rank === 1 ? "sc-rank-1" : "sc-mono"}>{r.rank}</td>
                   <td>
-                    {r.name} {r.verified && <span className="sc-tag v">V</span>}{" "}
-                    {r.isDemo && <span className="sc-tag">demo</span>}
+                    {r.name} {r.verified && <span className="sc-tag v">V</span>}
                   </td>
                   <td className="sc-mono muted">{r.wallet ?? "—"}</td>
                   <td className="num" style={{ fontWeight: 700 }}>{r.points}</td>
@@ -100,7 +99,7 @@ export function LeaderboardView() {
       </div>
       <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
         Verified = XRPL wallet connected. Prize-eligibility requires verified status; awards are promotional and
-        occasional, announced per cycle. Demo rows are seeded players for the prototype.
+        occasional, announced per cycle.
       </p>
     </>
   );
