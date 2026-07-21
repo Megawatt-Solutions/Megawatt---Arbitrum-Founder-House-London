@@ -28,13 +28,13 @@ export async function POST() {
   if (!ANCHOR_ADDRESS) {
     return NextResponse.json({ error: "Anchor account not configured." }, { status: 503 });
   }
-  const user = getUser(uid);
+  const user = await getUser(uid);
   if (!user?.verified || !user.wallet) {
     return NextResponse.json({ error: "Connect an XRPL wallet first." }, { status: 400 });
   }
   const day = openDeliveryDay(localTime());
   if (!day) return NextResponse.json({ error: "No round is open right now." }, { status: 400 });
-  const prediction = getPrediction(uid, day);
+  const prediction = await getPrediction(uid, day);
   if (!prediction) return NextResponse.json({ error: "Lock in a forecast first." }, { status: 400 });
   if (prediction.txHash && !prediction.txHash.startsWith("SIMULATED-")) {
     return NextResponse.json({ error: "Today's commit is already signed." }, { status: 409 });
@@ -70,7 +70,7 @@ export async function GET(req: Request) {
     if (!payload) return NextResponse.json({ error: "Unknown payload." }, { status: 404 });
     const txid = payload.response.txid ?? null;
     if (payload.meta.signed && txid) {
-      attachCommitTx(uid, day, txid); // server-observed hash, not client-claimed
+      await attachCommitTx(uid, day, txid); // server-observed hash, not client-claimed
     }
     return NextResponse.json({
       opened: payload.meta.app_opened,

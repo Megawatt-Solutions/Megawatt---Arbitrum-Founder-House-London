@@ -11,7 +11,7 @@
 //   • health endpoint on 127.0.0.1:8787
 // Logic mirrors web/src/lib/spreadcast/* — keep the two in sync.
 // ─────────────────────────────────────────────────────────────
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import http from "node:http";
 import cron from "node-cron";
 import pg from "pg";
@@ -275,7 +275,7 @@ async function settleDueRounds() {
   if (!due.rowCount) return "nothing due";
   const done = [];
   for (const row of due.rows) {
-    const day = row.delivery_day.toISOString().slice(0, 10);
+    const day = day10(row.delivery_day);
     let prices = row.source === "entsoe"
       ? { source: "entsoe", hourly: row.hourly.map(Number) }
       : (await fetchEntsoeDay(day).catch(() => null)) ?? simulateDay(day);
@@ -415,23 +415,245 @@ async function backfillChainTxs() {
   }
 }
 
-// ─── health endpoint ──────────────────────────────────────────
-http.createServer(async (_req, res) => {
+// ─── game RPC API ─────────────────────────────────────────────
+// The web app (local dev + Vercel) talks to Postgres exclusively through
+// these bearer-token endpoints — the database itself stays localhost-only.
+const API_TOKEN = process.env.SPREADCAST_API_TOKEN || "";
+const newId = () => randomBytes(8).toString("hex");
+
+function playerOut(r) {
+  return { id: r.id, email: r.email, name: r.name, wallet: r.wallet, verified: r.verified, demo: r.is_demo };
+}
+// pg returns `date` columns as local-midnight Dates; format via local
+// components (server TZ = Europe/Ljubljana) — toISOString would shift a day.
+const day10 = (d) =>
+  d instanceof Date
+    ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+    : String(d).slice(0, 10);
+function predOut(r) {
+  return {
+    userId: r.player_id, day: day10(r.delivery_day), band: r.band,
+    exact: r.exact_guess == null ? null : Number(r.exact_guess),
+    salt: r.salt, hash: r.commit_hash, txHash: r.tx_hash,
+    submittedAt: r.submitted_at,
+    correct: r.correct, streak: r.streak,
+    multiplier: r.multiplier == null ? undefined : Number(r.multiplier),
+    points: r.points ?? undefined,
+    absError: r.abs_error == null ? null : Number(r.abs_error),
+  };
+}
+function roundOut(r) {
+  return {
+    day: day10(r.delivery_day),
+    status: r.status,
+    boundaries: r.boundaries.map(Number),
+    closesAt: new Date(r.closes_at).getTime(),
+    opensAt: new Date(r.opens_at).getTime(),
+    source: r.source, resolution: r.resolution,
+    values: r.raw_values ? r.raw_values.map(Number) : undefined,
+    hourly: r.hourly ? r.hourly.map(Number) : undefined,
+    spread: r.spread == null ? undefined : Number(r.spread),
+    outcomeBand: r.outcome_band ?? undefined,
+    settledAt: r.settled_at ?? undefined,
+  };
+}
+
+const rpcMethods = {
+  async findOrCreateUser({ email, name }) {
+    const norm = String(email ?? "").trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(norm)) return { error: "Enter a valid email." };
+    const existing = await q("select * from players where email = $1", [norm]);
+    if (existing.rowCount) return { user: playerOut(existing.rows[0]) };
+    const nm = String(name ?? "").trim().slice(0, 24) || norm.split("@")[0];
+    const ins = await q("insert into players (id, email, name) values ($1, $2, $3) returning *", [newId(), norm, nm]);
+    return { user: playerOut(ins.rows[0]) };
+  },
+
+  async getUser({ id }) {
+    const r = await q("select * from players where id = $1", [id]);
+    return { user: r.rowCount ? playerOut(r.rows[0]) : null };
+  },
+
+  async connectWallet({ id, address }) {
+    if (!/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(String(address ?? ""))) return { error: "That doesn't look like an XRPL r-address." };
+    const r = await q("update players set wallet = $2, verified = true where id = $1 returning *", [id, address]);
+    return r.rowCount ? { user: playerOut(r.rows[0]) } : { error: "Session expired — join again." };
+  },
+
+  async submitPrediction({ userId, band, exact }) {
+    const now = localTime();
+    const day = now.minutes < CLOSE_MIN ? addDays(now.day, 1) : now.minutes >= OPEN_MIN ? addDays(now.day, 2) : null;
+    if (!day) return { error: "Predictions are closed right now — the next round opens at 15:00." };
+    const round = await q("select 1 from rounds where delivery_day = $1 and status = 'open' and closes_at > now()", [day]);
+    if (!round.rowCount) return { error: "This round just closed." };
+    if (!Number.isInteger(band) || band < 0 || band > 4) return { error: "Pick one of the five bands." };
+    if (exact != null && (!Number.isFinite(exact) || exact < 0 || exact > 4000)) return { error: "Exact spread guess must be between 0 and 4000 €/MWh." };
+    const user = await q("select * from players where id = $1", [userId]);
+    if (!user.rowCount) return { error: "Sign in first." };
+    const salt = randomBytes(16).toString("hex");
+    const hash = sha256(`${day}|${band}|${exact ?? ""}|${salt}`);
+    await q(
+      `insert into predictions (delivery_day, player_id, band, exact_guess, salt, commit_hash)
+       values ($1, $2, $3, $4, $5, $6)
+       on conflict (delivery_day, player_id) do update set
+         band = $3, exact_guess = $4, salt = $5, commit_hash = $6, tx_hash = null, submitted_at = now()`,
+      [day, userId, band, exact ?? null, salt, hash]
+    );
+    return { prediction: { day, band, exact: exact ?? null, hash }, commitTxNeeded: user.rows[0].verified };
+  },
+
+  async attachCommitTx({ userId, day, txHash }) {
+    const r = await q("update predictions set tx_hash = $3 where delivery_day = $1 and player_id = $2 returning 1", [day, userId, String(txHash).slice(0, 80)]);
+    return { ok: r.rowCount > 0 };
+  },
+
+  async getPrediction({ userId, day }) {
+    const r = await q("select * from predictions where delivery_day = $1 and player_id = $2", [day, userId]);
+    return { prediction: r.rowCount ? predOut(r.rows[0]) : null };
+  },
+
+  /** Everything the play screen needs in one call. */
+  async roundState({ userId }) {
+    const now = localTime();
+    const openDay = now.minutes < CLOSE_MIN ? addDays(now.day, 1) : now.minutes >= OPEN_MIN ? addDays(now.day, 2) : null;
+    let open = null;
+    if (openDay) {
+      const r = await q("select * from rounds where delivery_day = $1 and status = 'open'", [openDay]);
+      if (r.rowCount) {
+        const participants = await q(
+          "select count(*)::int c from predictions p join players u on u.id = p.player_id and not u.is_demo where p.delivery_day = $1",
+          [openDay]
+        );
+        open = { ...roundOut(r.rows[0]), participants: participants.rows[0].c };
+      }
+    }
+    const latestQ = await q("select * from rounds where status = 'settled' order by delivery_day desc limit 1");
+    const latest = latestQ.rowCount ? roundOut(latestQ.rows[0]) : null;
+    let mine = null, myLatest = null, user = null;
+    if (userId) {
+      const u = await q("select * from players where id = $1", [userId]);
+      user = u.rowCount ? playerOut(u.rows[0]) : null;
+      if (user && open) {
+        const p = await q("select * from predictions where delivery_day = $1 and player_id = $2", [open.day, userId]);
+        mine = p.rowCount ? predOut(p.rows[0]) : null;
+      }
+      if (user && latest) {
+        const p = await q("select * from predictions where delivery_day = $1 and player_id = $2", [latest.day, userId]);
+        myLatest = p.rowCount ? predOut(p.rows[0]) : null;
+      }
+    }
+    const boundaries = (await q("select value from meta where key = 'boundaries'")).rows[0].value.map(Number);
+    return {
+      now: { day: now.day, hh: now.hh, mm: now.mm },
+      user, open, latest, mine, myLatest, boundaries,
+      nextOpensAt: localMomentUtc(now.day, OPEN_MIN).getTime(),
+      nextDay: addDays(now.day, 2),
+    };
+  },
+
+  async leaderboard({ scope, verifiedOnly }) {
+    const week = isoWeek(localTime().day);
+    const rows = await q(
+      `select p.player_id, u.name, u.verified, u.wallet,
+              coalesce(sum(p.points), 0)::int points, count(*)::int played,
+              (count(*) filter (where p.correct))::int correct,
+              sum(p.abs_error) filter (where p.exact_guess is not null) abs_err,
+              (count(*) filter (where p.exact_guess is not null))::int guesses
+       from predictions p
+       join rounds r on r.delivery_day = p.delivery_day and r.status = 'settled'
+       join players u on u.id = p.player_id and not u.is_demo
+       where ($1 = 'season' or to_char(p.delivery_day, 'IYYY-"W"IW') = $2)
+         and (not $3 or u.verified)
+       group by 1, 2, 3, 4`,
+      [scope === "week" ? "week" : "season", week, !!verifiedOnly]
+    );
+    const lastSettled = await q("select delivery_day from rounds where status = 'settled' order by delivery_day desc limit 1");
+    const streaks = new Map();
+    if (lastSettled.rowCount) {
+      const s = await q("select player_id, streak from predictions where delivery_day = $1", [lastSettled.rows[0].delivery_day]);
+      for (const row of s.rows) streaks.set(row.player_id, row.streak ?? 0);
+    }
+    const out = rows.rows.map((r) => ({
+      rank: 0,
+      name: r.name,
+      verified: r.verified,
+      wallet: r.wallet ? `${r.wallet.slice(0, 6)}…${r.wallet.slice(-4)}` : null,
+      points: r.points,
+      played: r.played,
+      correct: r.correct,
+      streak: streaks.get(r.player_id) ?? 0,
+      absError: r.guesses > 0 ? Math.round(Number(r.abs_err) * 100) / 100 : null,
+      isDemo: false,
+    }));
+    out.sort((x, y) => y.points - x.points || (x.absError ?? Infinity) - (y.absError ?? Infinity) || y.correct - x.correct);
+    out.forEach((r, i) => (r.rank = i + 1));
+    return { rows: out.slice(0, 100) };
+  },
+
+  async archive() {
+    const rounds = await q("select * from rounds where status = 'settled' order by delivery_day desc");
+    const anchorsQ = await q("select * from anchors order by week desc");
+    return {
+      rounds: rounds.rows.map(roundOut),
+      anchors: anchorsQ.rows.map((a) => ({
+        week: a.week, root: a.merkle_root, leaves: a.leaves, txHash: a.tx_hash, simulated: a.simulated, createdAt: a.created_at,
+      })),
+    };
+  },
+
+  async archiveDay({ day }) {
+    const r = await q("select * from rounds where delivery_day = $1 and status = 'settled'", [day]);
+    if (!r.rowCount) return { error: "Not settled." };
+    const reveal = await q(
+      `select p.*, u.name, u.verified from predictions p join players u on u.id = p.player_id
+       where p.delivery_day = $1 order by p.points desc nulls last`,
+      [day]
+    );
+    return {
+      round: roundOut(r.rows[0]),
+      reveal: reveal.rows.map((p) => ({
+        user: p.name, verified: p.verified, band: p.band,
+        exact: p.exact_guess == null ? null : Number(p.exact_guess),
+        salt: p.salt, hash: p.commit_hash, txHash: p.tx_hash,
+        correct: p.correct, points: p.points ?? 0,
+      })),
+    };
+  },
+};
+
+http.createServer(async (req, res) => {
+  const send = (code, body) => {
+    res.writeHead(code, { "content-type": "application/json" });
+    res.end(JSON.stringify(body));
+  };
   try {
-    const jobs = await q("select job, ok, detail, ran_at from job_runs order by id desc limit 12");
-    const counts = await q(`select
-      (select count(*) from rounds) rounds,
-      (select count(*) from rounds where status = 'settled') settled,
-      (select count(*) from players) players,
-      (select count(*) from predictions) predictions,
-      (select count(*) from chain_txs) chain_txs`);
-    res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ ok: true, tz: TZ, now: localTime(), counts: counts.rows[0], recentJobs: jobs.rows }, null, 2));
+    if (req.method === "GET") {
+      // Public health snapshot (no secrets).
+      const jobs = await q("select job, ok, detail, ran_at from job_runs order by id desc limit 12");
+      const counts = await q(`select
+        (select count(*) from rounds) rounds,
+        (select count(*) from rounds where status = 'settled') settled,
+        (select count(*) from players where not is_demo) players,
+        (select count(*) from predictions) predictions,
+        (select count(*) from chain_txs) chain_txs`);
+      return send(200, { ok: true, tz: TZ, now: localTime(), counts: counts.rows[0], recentJobs: jobs.rows });
+    }
+    if (req.method !== "POST" || req.url !== "/rpc") return send(404, { error: "not found" });
+    if (!API_TOKEN || req.headers.authorization !== `Bearer ${API_TOKEN}`) return send(401, { error: "unauthorized" });
+    let body = "";
+    for await (const chunk of req) {
+      body += chunk;
+      if (body.length > 100_000) return send(413, { error: "too large" });
+    }
+    const { method, params } = JSON.parse(body || "{}");
+    const fn = rpcMethods[method];
+    if (!fn) return send(400, { error: `unknown method ${method}` });
+    return send(200, await fn(params ?? {}));
   } catch (e) {
-    res.writeHead(500, { "content-type": "application/json" });
-    res.end(JSON.stringify({ ok: false, error: e.message }));
+    log("rpc error", e);
+    return send(500, { error: "internal error" });
   }
-}).listen(8787, "127.0.0.1", () => log("health endpoint on 127.0.0.1:8787"));
+}).listen(8787, "0.0.0.0", () => log("game API + health on 0.0.0.0:8787"));
 
 // ─── schedule (all Europe/Ljubljana) ──────────────────────────
 const sched = (expr, name, fn) => cron.schedule(expr, () => jobRun(name, fn), { timezone: TZ });
