@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PRIZE_POOL, prizeForRank } from "@/lib/spreadcast/prizes";
 
 interface Row {
   rank: number;
@@ -35,8 +36,24 @@ export function LeaderboardView() {
     <>
       <h1>Leaderboard</h1>
       <p className="sc-sub">
-        10 points per correct band · streak multiplier up to ×3 · ties broken by cumulative exact-guess error.
+        10 points per correct call · streak multiplier up to ×3 · ties broken by the closest exact guesses.
       </p>
+      <div className="sc-prizebar">
+        <div>
+          <div className="label">{PRIZE_POOL.season} prize pool · top 10</div>
+          <div className="amount">${PRIZE_POOL.total} <small>{PRIZE_POOL.currency}</small></div>
+        </div>
+        <div>
+          <div className="sc-prize-split">
+            {PRIZE_POOL.split.map((amt, i) => (
+              <span key={i} className={i < 3 ? "top" : ""}>#{i + 1} · ${amt}</span>
+            ))}
+          </div>
+          <div className="label" style={{ marginTop: 6 }}>
+            promotional awards · verified players · paid in RLUSD on XRPL
+          </div>
+        </div>
+      </div>
       <div className="sc-lb-controls">
         <div className="sc-seg">
           <button className={scope === "week" ? "on" : ""} onClick={() => setScope("week")}>
@@ -79,18 +96,21 @@ export function LeaderboardView() {
             ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={8} className="muted">
-                  No forecasts yet this period — lock in the first one on the Play tab.
+                  No predictions yet this period — lock in the first one on the Play tab.
                 </td>
               </tr>
             ) : (
               rows.map((r) => (
                 <tr key={r.rank}>
-                  <td className={r.rank === 1 ? "sc-rank-1" : "sc-mono"}>{r.rank}</td>
+                  <td className={r.rank === 1 ? "sc-rank-1" : "sc-mono"}>
+                    {r.rank}
+                    {prizeForRank(r.rank) != null && <div className="sc-prize-amt">${prizeForRank(r.rank)}</div>}
+                  </td>
                   <td>
                     {r.name} {r.verified && <span className="sc-tag v">V</span>}{" "}
                     {r.pending && (
                       <span className="sc-tag" style={{ color: "var(--amber)", borderColor: "rgba(244,181,62,0.4)" }}>
-                        forecast in
+                        prediction in
                       </span>
                     )}{" "}
                     {r.signedPending && <span className="sc-tag v">on-chain</span>}
@@ -108,8 +128,8 @@ export function LeaderboardView() {
         </table>
       </div>
       <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
-        Verified = XRPL wallet connected. &ldquo;Forecast in&rdquo; = live forecast awaiting the 15:00 settlement;
-        &ldquo;on-chain&rdquo; = that forecast is committed on XRPL mainnet. Prize-eligibility requires verified
+        Verified = XRPL wallet connected. &ldquo;Prediction in&rdquo; = prediction awaiting today&apos;s 15:00 result;
+        &ldquo;on-chain&rdquo; = that prediction is locked on XRPL mainnet. Prize pool is split across the top 10 of the season leaderboard. Prize-eligibility requires verified
         status; awards are promotional and occasional, announced per cycle.
       </p>
     </>

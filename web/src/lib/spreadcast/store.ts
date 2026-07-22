@@ -161,6 +161,10 @@ export async function archive(): Promise<{ rounds: RoundInfo[]; anchors: Anchor[
   return rpc("archive");
 }
 
+export async function swingHistory(): Promise<{ day: string; swing: number }[]> {
+  return (await rpc<{ days: { day: string; swing: number }[] }>("swingHistory")).days;
+}
+
 export async function archiveDay(day: string): Promise<{ round?: RoundInfo; reveal?: RevealEntry[]; error?: string }> {
   return rpc("archiveDay", { day });
 }

@@ -53,6 +53,8 @@ export function PlayView() {
   const [msg, setMsg] = useState<{ kind: "err" | "ok"; text: string } | null>(null);
   const [acctMsg, setAcctMsg] = useState<{ kind: "err" | "ok"; text: string } | null>(null);
   const [commit, setCommit] = useState<{ hash: string; signed: boolean; txHash?: string | null } | null>(null);
+  // Real recent daily swings (SI market) — helps players calibrate.
+  const [history, setHistory] = useState<{ day: string; swing: number }[]>([]);
   // Live Xaman signing of the daily commit (QR / deep link + polling).
   const [signFlow, setSignFlow] = useState<{ uuid: string; qrPng: string; deeplink: string; opened: boolean } | null>(null);
 
@@ -71,6 +73,10 @@ export function PlayView() {
   }, []);
   useEffect(() => {
     load();
+    fetch("/api/spreadcast/history", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setHistory(Array.isArray(d.days) ? d.days : []))
+      .catch(() => {});
   }, [load]);
 
   const isOpen = state?.open && "day" in state.open;
@@ -120,7 +126,7 @@ export function PlayView() {
     setBusy(false);
     if (!res.ok) return setMsg({ kind: "err", text: data.error });
     setCommit({ hash: data.prediction.hash, signed: false });
-    setMsg({ kind: "ok", text: "Forecast locked in. You can change it until close." });
+    setMsg({ kind: "ok", text: "Prediction locked in — you can change it until close." });
     load();
   };
 
@@ -152,7 +158,7 @@ export function PlayView() {
           clearInterval(iv);
           setSignFlow(null);
           setCommit((c) => (c ? { ...c, signed: true, txHash: s.txHash } : c));
-          setMsg({ kind: "ok", text: "Commit signed — your forecast is now committed on XRPL mainnet." });
+          setMsg({ kind: "ok", text: "Locked — your prediction is now on XRPL mainnet." });
         } else if (s.cancelled || s.expired) {
           clearInterval(iv);
           setSignFlow(null);
@@ -195,16 +201,34 @@ export function PlayView() {
   const hourlyMin = latest ? Math.min(...latest.hourly) : 0;
   const hourlyMax = latest ? Math.max(...latest.hourly) : 1;
 
+  // Band helpers against the boundaries of the round being played.
+  const activeBounds = isOpen ? (state.open as { boundaries: number[] }).boundaries : state.boundaries;
+  const bandOfSwing = (v: number) => {
+    for (let i = 0; i < activeBounds.length; i++) if (v < activeBounds[i]) return i;
+    return activeBounds.length;
+  };
+  const histMax = history.length ? Math.max(...history.map((h) => h.swing)) : 1;
+  const BAND_NAMES = ["Calm", "Steady", "Lively", "Swingy", "Wild"];
+  const shortDay = (d: string) => {
+    const [, m, dd] = d.split("-");
+    return `${Number(dd)} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(m) - 1]}`;
+  };
+  const histAvg = history.length ? history.reduce((a, h) => a + h.swing, 0) / history.length : 0;
+  const bandHits = [0, 1, 2, 3, 4].map(
+    (i) => history.filter((h) => bandOfSwing(h.swing) === i).length
+  );
+
   return (
     <>
       <div className="sc-play-top">
         <div>
           <h1>
-            Call tomorrow&apos;s <span>spread</span>.
+            How <span>wild</span> will electricity prices get tomorrow?
           </h1>
           <p className="sc-sub" style={{ marginBottom: 0 }}>
-            Which band does the SI day-ahead daily price spread (max − min hourly, €/MWh) land in
-            {isOpen ? ` for ${(state.open as { day: string }).day}?` : "?"} Free to play, every day.
+            Slovenia&apos;s electricity price changes every hour. Predict how big the swing between the day&apos;s
+            highest and lowest price will be{isOpen ? ` on ${(state.open as { day: string }).day}` : ""} — free to
+            play, every day.
           </p>
         </div>
         <div className="sc-countdown">
@@ -222,9 +246,9 @@ export function PlayView() {
               <span className="tick bl" />
               <span className="tick br" />
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                <h2 style={{ marginBottom: 0 }}>Delivery day {(state.open as { day: string }).day}</h2>
+                <h2 style={{ marginBottom: 0 }}>Round · {(state.open as { day: string }).day}</h2>
                 <span className="sc-pill">
-                  {(state.open as { participants: number }).participants} forecasts in
+                  {(state.open as { participants: number }).participants} predictions in
                 </span>
               </div>
               <div className="sc-bands">
@@ -239,12 +263,17 @@ export function PlayView() {
                     <div className="sc-band-name">{b.name}</div>
                     <div className="sc-band-range">{b.label}</div>
                     <div className="sc-band-unit">€/MWh</div>
+                    {history.length > 0 && (
+                      <div className="sc-band-hint">
+                        {Math.round((bandHits[b.i] / history.length) * 100)}% of last {history.length}d
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
               <div className="sc-exact-row">
                 <label className="muted" style={{ fontSize: 13 }}>
-                  Exact spread (optional tiebreaker):
+                  Exact swing (optional tiebreaker):
                 </label>
                 <input
                   className="sc-field sc-mono"
@@ -257,7 +286,7 @@ export function PlayView() {
               </div>
               {state.user ? (
                 <button className="btn btn-accent" onClick={submit} disabled={busy || sel == null}>
-                  {state.mine ? "Update forecast" : "Lock in forecast"}
+                  {state.mine ? "Update prediction" : "Lock in prediction"}
                 </button>
               ) : (
                 <p className="sc-notice">Join with your email in the panel on the right — it takes five seconds.</p>
@@ -266,14 +295,14 @@ export function PlayView() {
 
               {commit && state.user && (
                 <div className="sc-commit-box">
-                  COMMIT HASH (sha256, salted — published before close, revealed after settlement)
+                  PREDICTION FINGERPRINT (sha256 · locked before results exist · revealed after)
                   <br />
                   {commit.hash}
                   {state.user.verified && (
                     <div style={{ marginTop: 8 }}>
                       {commit.signed ? (
                         <span style={{ color: "var(--accent)" }}>
-                          ✓ 1-drop commit signature recorded
+                          ✓ locked on XRPL mainnet
                           {commit.txHash && !commit.txHash.startsWith("SIMULATED-") && (
                             <>
                               {" · "}
@@ -294,7 +323,7 @@ export function PlayView() {
                           <img src={signFlow.qrPng} alt="Xaman commit QR" width={124} height={124} style={{ background: "#fff", padding: 5 }} />
                           <div style={{ display: "grid", gap: 8, justifyItems: "start" }}>
                             <span style={{ color: "var(--text-2)" }}>
-                              {signFlow.opened ? "Opened in Xaman — approve to commit" : "Scan with Xaman to sign your 1-drop commit"}
+                              {signFlow.opened ? "Opened in Xaman — approve to commit" : "Scan with Xaman to lock your prediction on-chain"}
                             </span>
                             <a className="btn btn-ghost btn-sm" href={signFlow.deeplink} target="_blank" rel="noreferrer">
                               Open in Xaman app
@@ -309,7 +338,7 @@ export function PlayView() {
                         </div>
                       ) : (
                         <button className="btn btn-ghost btn-sm" onClick={startSign} disabled={busy}>
-                          Sign daily commit (1 drop · Xaman)
+                          Lock on-chain with Xaman (1 drop)
                         </button>
                       )}
                     </div>
@@ -321,19 +350,53 @@ export function PlayView() {
             <div className="panel sc-panel">
               <h2>Between rounds</h2>
               <p className="sc-notice">
-                Today&apos;s auction is running. Forecasts for {(state.open as { nextDay: string }).nextDay} open at
-                15:00 CET — right after today&apos;s settlement.
+                Today&apos;s results are being tallied. Predictions for {(state.open as { nextDay: string }).nextDay}{" "}
+                open at 15:00.
+              </p>
+            </div>
+          )}
+
+          {history.length > 0 && (
+            <div className="panel sc-panel" style={{ marginTop: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                <h2 style={{ marginBottom: 0 }}>Recent swings · last {history.length} days</h2>
+                <span className="sc-pill">real market data</span>
+              </div>
+              <div className="sc-hist">
+                {history.map((h) => (
+                  <span
+                    key={h.day}
+                    className="sc-bar-tip"
+                    data-tip={`${shortDay(h.day)} · ${h.swing.toFixed(0)} €/MWh · ${BAND_NAMES[bandOfSwing(h.swing)]}`}
+                    style={{
+                      height: `${8 + (h.swing / histMax) * 90}%`,
+                      background: `var(${BAND_VARS[bandOfSwing(h.swing)]})`,
+                    }}
+                  />
+                ))}
+              </div>
+              <div className="sc-hist-stats">
+                <span className="sc-mono muted">avg {histAvg.toFixed(0)} €/MWh</span>
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <span key={i} className="sc-mono" style={{ color: `var(${BAND_VARS[i]})` }}>
+                    {["Calm", "Steady", "Lively", "Swingy", "Wild"][i]} {Math.round((bandHits[i] / history.length) * 100)}%
+                  </span>
+                ))}
+              </div>
+              <p className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+                daily price swings on the Slovenian market · colored by today&apos;s bands · data: ENTSO-E via
+                Energy-Charts
               </p>
             </div>
           )}
 
           {latest && (
             <div className="panel sc-panel" style={{ marginTop: 16 }}>
-              <h2>Latest settlement · {latest.day}</h2>
+              <h2>Latest result · {latest.day}</h2>
               <div className="sc-result-strip">
                 <div>
                   <div className="sc-result-num">{latest.spread.toFixed(2)} €</div>
-                  <div className="muted" style={{ fontSize: 12 }}>daily spread</div>
+                  <div className="muted" style={{ fontSize: 12 }}>price swing</div>
                 </div>
                 <span
                   className="sc-band-chip"
@@ -357,7 +420,8 @@ export function PlayView() {
                   return (
                     <span
                       key={i}
-                      title={`${String(i).padStart(2, "0")}:00 · ${v.toFixed(2)} €/MWh`}
+                      className="sc-bar-tip"
+                      data-tip={`${String(i).padStart(2, "0")}:00 · ${v.toFixed(2)} €/MWh`}
                       style={{
                         height: `${6 + t * 92}%`,
                         background: v < 0 ? "var(--sc-b0)" : `color-mix(in srgb, var(--sc-b4) ${Math.round(t * 100)}%, var(--sc-b1))`,
@@ -367,7 +431,7 @@ export function PlayView() {
                 })}
               </div>
               <p className="muted" style={{ fontSize: 11, marginTop: 6 }}>
-                hourly means, 00–23 CET · negative hours shown blue · full audit in the archive
+                hourly prices, 00–23 · blue = price went negative · full details under Results
               </p>
             </div>
           )}
@@ -399,7 +463,7 @@ export function PlayView() {
                 <>
                   <p className="sc-notice" style={{ margin: "10px 0" }}>
                     Connect an XRPL wallet to join the verified leaderboard and become prize-eligible. Your daily
-                    forecast is then committed on-chain with a 1-drop signature.
+                    prediction then gets locked on-chain — tamper-proof.
                   </p>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <input className="sc-field sc-mono" placeholder="rYourXrplAddress…" value={wallet} onChange={(e) => setWallet(e.target.value)} />
@@ -413,7 +477,7 @@ export function PlayView() {
                 <p className="sc-notice" style={{ marginTop: 8 }}>
                   <span className="sc-mono">{state.user.wallet}</span>
                   <br />
-                  Daily commits are signed as 1-drop payments to the platform anchor.
+                  Your predictions are locked on-chain with tiny 1-drop payments.
                 </p>
               )}
             </div>
@@ -422,8 +486,8 @@ export function PlayView() {
           <div className="panel sc-panel">
             <h2>This week&apos;s bands</h2>
             <p className="sc-notice" style={{ marginBottom: 10 }}>
-              Recalibrated every Monday from trailing 60-day quintiles — each band ≈ 20% base chance. Skill is
-              reading weather, solar and demand.
+              Bands adjust every Monday to recent prices, so each one is roughly a 20% chance. Skill is reading
+              the weather, sunshine and demand.
             </p>
             {[0, 1, 2, 3, 4].map((i) => {
               const b = state.boundaries;
@@ -441,9 +505,9 @@ export function PlayView() {
           <div className="panel sc-panel">
             <h2>Prizes</h2>
             <p className="sc-notice">
-              Top verified ranks occasionally receive sponsored <b>RLUSD promotional awards</b> and future{" "}
-              <b>protocol boosts</b>. Entry is always free — prizes are marketing awards from the sponsor, never a
-              return on anything you paid.
+              <b style={{ color: "var(--accent)" }}>$500 RLUSD prize pool</b> — split across the top 10 of the
+              season leaderboard, paid on XRPL. Entry is always free; prizes are promotional awards from the
+              sponsor, never a return on anything you paid.
             </p>
           </div>
         </div>

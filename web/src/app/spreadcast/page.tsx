@@ -12,7 +12,7 @@ import { HowView } from "@/components/spreadcast/HowView";
 const TABS = [
   { id: "play", label: "Play" },
   { id: "leaderboard", label: "Leaderboard" },
-  { id: "archive", label: "Archive" },
+  { id: "archive", label: "Results" },
   { id: "how", label: "How it works" },
 ] as const;
 

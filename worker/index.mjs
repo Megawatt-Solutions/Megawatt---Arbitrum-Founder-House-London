@@ -187,6 +187,32 @@ async function fetchEntsoeDay(day) {
   return { source: "entsoe", resolution: quarter ? "PT15M" : "PT60M", values, hourly: toHourlyMeans(values) };
 }
 
+/** Real prices for one delivery day from Energy-Charts (ENTSO-E mirror,
+ * no key). Used as settlement fallback until ENTSOE_TOKEN is configured. */
+async function fetchEnergyChartsDay(day) {
+  const res = await fetch(`https://api.energy-charts.info/price?bzn=SI&start=${day}&end=${day}`, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!res.ok) return null;
+  const data = await res.json();
+  const ts = data.unix_seconds ?? [];
+  const prices = data.price ?? [];
+  const byHour = new Map();
+  const values = [];
+  for (let i = 0; i < ts.length; i++) {
+    if (prices[i] == null) continue;
+    const lt = localTime(new Date(ts[i] * 1000));
+    if (lt.day !== day) continue;
+    values.push(Number(prices[i]));
+    if (!byHour.has(lt.hh)) byHour.set(lt.hh, []);
+    byHour.get(lt.hh).push(Number(prices[i]));
+  }
+  if (byHour.size < 20) return null; // not published yet / partial
+  const hourly = [...byHour.entries()].sort((a, b) => a[0] - b[0]).map(([, a]) => a.reduce((x, y) => x + y, 0) / a.length);
+  return { source: "energy-charts", resolution: values.length >= 90 ? "PT15M" : "PT60M", values, hourly };
+}
+
 // ─── merkle (port of merkle.ts) ───────────────────────────────
 const sha256 = (s) => createHash("sha256").update(s).digest("hex");
 function merkleRoot(leaves) {
@@ -211,11 +237,18 @@ async function recalibrateIfDue(openDay) {
   const last = await q("select value from meta where key = 'lastRecalc'");
   if (last.rows[0]?.value === openDay) return "already done";
   const r = await q(
-    `select spread from rounds where status = 'settled' and delivery_day < $1 and delivery_day >= $2
+    `select spread from rounds where status = 'settled' and source != 'simulated'
+       and delivery_day < $1 and delivery_day >= $2
      order by delivery_day desc limit 60`,
     [openDay, addDays(openDay, -60)]
   );
-  const b = quintileBoundaries(r.rows.map((x) => Number(x.spread)));
+  let samples = r.rows.map((x) => Number(x.spread));
+  if (samples.length < 30) {
+    // Not enough real settled rounds yet — calibrate from real market history.
+    const h = await q("select swing from price_history where day < $1 and day >= $2", [openDay, addDays(openDay, -60)]);
+    samples = samples.concat(h.rows.map((x) => Number(x.swing))).slice(0, 60);
+  }
+  const b = quintileBoundaries(samples);
   if (!b) return `history ${r.rows.length} < 30, keeping boundaries`;
   await q("insert into meta (key, value) values ('boundaries', $1::jsonb) on conflict (key) do update set value = $1::jsonb", [JSON.stringify(b)]);
   await q("insert into meta (key, value) values ('lastRecalc', $1::jsonb) on conflict (key) do update set value = $1::jsonb", [JSON.stringify(openDay)]);
@@ -249,8 +282,8 @@ async function pollPrices() {
   const round = await q("select status, source from rounds where delivery_day = $1", [day]);
   if (!round.rowCount) return `no round for ${day}`;
   if (round.rows[0].source === "entsoe") return `already have entsoe prices for ${day}`;
-  const prices = await fetchEntsoeDay(day);
-  if (!prices) return `entsoe not available for ${day} (token ${ENTSOE_TOKEN ? "set" : "missing"})`;
+  const prices = (await fetchEntsoeDay(day)) ?? (await fetchEnergyChartsDay(day).catch(() => null));
+  if (!prices) return `no prices available yet for ${day} (entsoe token ${ENTSOE_TOKEN ? "set" : "missing"})`;
   await q("update rounds set source = $2, resolution = $3, raw_values = $4, hourly = $5 where delivery_day = $1",
     [day, prices.source, prices.resolution, prices.values, prices.hourly.map((v) => Math.round(v * 100) / 100)]);
   return `stored entsoe prices for ${day}`;
@@ -278,7 +311,9 @@ async function settleDueRounds() {
     const day = day10(row.delivery_day);
     let prices = row.source === "entsoe"
       ? { source: "entsoe", hourly: row.hourly.map(Number) }
-      : (await fetchEntsoeDay(day).catch(() => null)) ?? simulateDay(day);
+      : (await fetchEntsoeDay(day).catch(() => null)) ??
+        (await fetchEnergyChartsDay(day).catch(() => null)) ??
+        simulateDay(day);
     const hourly = prices.hourly.map((v) => Math.round(v * 100) / 100);
     const spread = Math.round((Math.max(...hourly) - Math.min(...hourly)) * 100) / 100;
     const outcome = bandOf(spread, row.boundaries.map(Number));
@@ -303,6 +338,51 @@ async function settleDueRounds() {
   }
   await ensureOpenRound();
   return done.join("; ");
+}
+
+// ─── historical swing data (player context, display-only) ─────
+// Real SI day-ahead prices from Energy-Charts (Fraunhofer ISE, ENTSO-E
+// data, CC BY 4.0, no API key). Settlement stays on the official
+// ENTSO-E/simulator path — this table only powers the "recent swings"
+// helper on the Play tab.
+async function refreshPriceHistory() {
+  await q(`create table if not exists price_history (
+    day date primary key,
+    swing numeric not null,
+    source text not null default 'energy-charts',
+    fetched_at timestamptz not null default now()
+  )`);
+  const now = localTime();
+  const start = addDays(now.day, -35);
+  const res = await fetch(`https://api.energy-charts.info/price?bzn=SI&start=${start}&end=${now.day}`, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(25000),
+  });
+  if (!res.ok) throw new Error(`energy-charts http ${res.status}`);
+  const data = await res.json();
+  const ts = data.unix_seconds ?? [];
+  const prices = data.price ?? [];
+  const dayHours = new Map(); // local day -> hour -> [prices]
+  for (let i = 0; i < ts.length; i++) {
+    if (prices[i] == null) continue;
+    const lt = localTime(new Date(ts[i] * 1000));
+    if (!dayHours.has(lt.day)) dayHours.set(lt.day, new Map());
+    const hm = dayHours.get(lt.day);
+    if (!hm.has(lt.hh)) hm.set(lt.hh, []);
+    hm.get(lt.hh).push(Number(prices[i]));
+  }
+  let n = 0;
+  for (const [day, hm] of dayHours) {
+    if (day >= now.day || hm.size < 20) continue; // completed days only
+    const hourly = [...hm.values()].map((a) => a.reduce((x, y) => x + y, 0) / a.length);
+    const swing = Math.round((Math.max(...hourly) - Math.min(...hourly)) * 100) / 100;
+    await q(
+      "insert into price_history (day, swing) values ($1, $2) on conflict (day) do update set swing = $2, fetched_at = now()",
+      [day, swing]
+    );
+    n++;
+  }
+  return `stored ${n} days`;
 }
 
 // ─── weekly anchor ────────────────────────────────────────────
@@ -641,6 +721,12 @@ const rpcMethods = {
     };
   },
 
+  /** Recent real daily swings for the Play-tab helper (oldest → newest). */
+  async swingHistory() {
+    const r = await q("select day, swing from price_history order by day desc limit 30");
+    return { days: r.rows.map((x) => ({ day: day10(x.day), swing: Number(x.swing) })).reverse() };
+  },
+
   async archiveDay({ day }) {
     const r = await q("select * from rounds where delivery_day = $1 and status = 'settled'", [day]);
     if (!r.rowCount) return { error: "Not settled." };
@@ -705,6 +791,7 @@ sched("0 15 * * *", "settle", settleDueRounds);
 sched("15,30 15 * * *", "settle-retry", settleDueRounds);
 sched("5 15 * * *", "ensure-round", ensureOpenRound);
 sched("10 15 * * 0", "weekly-anchor", weeklyAnchor);
+sched("20 15 * * *", "price-history", refreshPriceHistory);
 sched("*/30 * * * *", "chain-backfill", backfillChainTxs);
 sched("0 * * * *", "heartbeat", async () => "alive");
 
@@ -713,6 +800,7 @@ sched("0 * * * *", "heartbeat", async () => "alive");
   await jobRun("boot-ensure-round", ensureOpenRound);
   await jobRun("boot-close", closeDueRounds);
   await jobRun("boot-settle", settleDueRounds);
+  await jobRun("boot-price-history", refreshPriceHistory);
   startXrplListener();
   log("spreadcast worker up");
 })();

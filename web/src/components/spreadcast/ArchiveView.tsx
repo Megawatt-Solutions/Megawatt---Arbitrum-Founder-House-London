@@ -60,10 +60,10 @@ export function ArchiveView() {
 
   return (
     <>
-      <h1>Settlement archive</h1>
+      <h1>Results</h1>
       <p className="sc-sub">
-        Official published day-ahead prices are final. Values are aggregated to hourly means, spread = max − min.
-        Click a day for the full audit trail including the commit-reveal record.
+        Every round is decided by the official European electricity market prices — never by us. Click a day for
+        the full price curve and everyone&apos;s revealed predictions.
       </p>
 
       <div className="panel sc-panel" style={{ padding: 0, overflowX: "auto", marginBottom: 20 }}>
@@ -71,7 +71,7 @@ export function ArchiveView() {
           <thead>
             <tr>
               <th>DELIVERY DAY</th>
-              <th className="num">SPREAD €/MWh</th>
+              <th className="num">SWING €/MWh</th>
               <th>BAND</th>
               <th>BOUNDARIES</th>
               <th>SOURCE</th>
@@ -93,10 +93,10 @@ export function ArchiveView() {
         </table>
       </div>
 
-      <h2>Weekly Merkle anchors</h2>
+      <h2>Weekly blockchain anchors</h2>
       <p className="muted" style={{ fontSize: 13, marginBottom: 10 }}>
-        One XRPL transaction per week carries the Merkle root of all predictions and outcomes, so email-only
-        players are auditable too. {anchors.some((a) => a.simulated) && "Simulated in the prototype."}
+        Once a week, a fingerprint of every prediction and result is written to XRPL — so even email-only players
+        get a tamper-proof record. {anchors.some((a) => a.simulated) && "Simulated in the prototype."}
       </p>
       <div className="panel sc-panel" style={{ padding: 0, overflowX: "auto" }}>
         <table className="sc-table">

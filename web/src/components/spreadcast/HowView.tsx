@@ -10,23 +10,22 @@ export function HowView() {
         <div className="panel sc-panel">
           <h2 className="sc-how-h">THE DAILY QUESTION</h2>
           <p>
-            Every day, one question: <b>which band will tomorrow&apos;s daily price spread land in?</b> The spread is
-            the maximum minus the minimum hourly price for the delivery day, in €/MWh, on the SI bidding zone
-            day-ahead auction.
+            Every day, one question: <b>how big will tomorrow&apos;s electricity price swing be?</b> The swing is the
+            gap between the day&apos;s highest and lowest hourly price on Slovenia&apos;s electricity market, in €/MWh.
           </p>
           <p style={{ marginTop: 10 }}>
-            Five bands, recalibrated every Monday from trailing 60-day quintiles, so each band carries roughly 20%
-            base probability. Your edge is reading the weather, solar output and demand — pure skill.
+            You pick one of five bands, from Calm to Wild. Bands adjust every Monday to recent prices, so each one
+            is roughly a 20% chance — your edge is reading the weather, sunshine and demand. Pure skill.
           </p>
         </div>
 
         <div className="panel sc-panel">
           <h2 className="sc-how-h">THE CLOCK</h2>
           <div className="sc-timeline">
-            <div className="t"><b>15:00 CET</b><span>Forecasts open, two days before delivery.</span></div>
-            <div className="t"><b>11:45 CET</b><span>Forecasts close — before the 12:00 SDAC gate, so no outcome information exists at close.</span></div>
+            <div className="t"><b>15:00 CET</b><span>Predictions open for the day after tomorrow.</span></div>
+            <div className="t"><b>11:45 CET</b><span>Predictions close — before the daily European electricity auction runs, so nobody can know the outcome.</span></div>
             <div className="t"><b>~13:00 CET</b><span>Auction results publish.</span></div>
-            <div className="t"><b>15:00 CET</b><span>Settlement runs; published prices are aggregated to hourly means and are final.</span></div>
+            <div className="t"><b>15:00 CET</b><span>Results are scored automatically from the official published prices.</span></div>
           </div>
         </div>
 
@@ -56,8 +55,8 @@ export function HowView() {
         <div className="panel sc-panel">
           <h2 className="sc-how-h">PRIZES</h2>
           <p>
-            Top verified ranks occasionally receive sponsored <b>RLUSD promotional awards</b> (RLUSD needs a
-            trustline — one more real on-chain step) and future <b>protocol boosts</b>. Prizes are marketing awards
+            A <b>$500 RLUSD prize pool</b> is split across the top 10 of the season leaderboard and paid out on
+            XRPL (receiving RLUSD needs a trustline — one more real on-chain step). Prizes are promotional awards
             from the sponsoring entity. They are never a return on a payment, because there is no payment: entry is
             free in every configuration and the platform has no way to accept money from players.
           </p>
